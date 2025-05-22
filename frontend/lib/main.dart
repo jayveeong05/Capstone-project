@@ -7,7 +7,7 @@ void main() {
 }
 
 
-const String baseUrl = "http://localhost:53070";
+const String baseUrl = "http://10.0.2.2:5000"; // Replace with your backend URL
 
 class MyApp extends StatelessWidget {
   @override
