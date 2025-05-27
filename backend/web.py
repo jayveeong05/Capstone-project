@@ -20,11 +20,12 @@ def signup():
     data = request.get_json()
     username = data.get('username')
     password = generate_password_hash(data.get('password'))
+    email = data.get('email')
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+        c.execute("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", (username, email, password))
         conn.commit()
         return jsonify({'message': 'User registered successfully'}), 201
     except sqlite3.IntegrityError:
@@ -35,19 +36,19 @@ def signup():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    username = data.get('username')
+    email = data.get('email')
     password = data.get('password')
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute("SELECT password FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password FROM users WHERE email = ?", (email,))
     row = c.fetchone()
     conn.close()
 
     if row and check_password_hash(row[0], password):
         return jsonify({'message': 'Login successful'}), 200
     else:
-        return jsonify({'error': 'Invalid username or password'}), 401
+        return jsonify({'error': 'Invalid email or password'}), 401
 
 if __name__ == '__main__':
     init_db()

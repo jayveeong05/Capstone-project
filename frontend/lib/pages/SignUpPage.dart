@@ -12,6 +12,7 @@ class SignUpPage extends StatefulWidget {
 class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
+  final TextEditingController _email = TextEditingController();
   String _responseMessage = '';
 
   Future<void> _signup() async {
@@ -21,6 +22,7 @@ class _SignUpPageState extends State<SignUpPage> {
       body: jsonEncode({
         'username': _username.text,
         'password': _password.text,
+        'email': _email.text,
       }),
     );
 
@@ -42,6 +44,7 @@ class _SignUpPageState extends State<SignUpPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(controller: _username, decoration: InputDecoration(labelText: 'Username')),
+              TextField(controller: _email, decoration: InputDecoration(labelText:'Email' )),
               TextField(controller: _password, decoration: InputDecoration(labelText: 'Password'), obscureText: true),
               SizedBox(height: 20),
               ElevatedButton(onPressed: _signup, child: Text("Sign Up")),
