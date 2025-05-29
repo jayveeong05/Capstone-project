@@ -60,7 +60,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
             // Dot indicators
             Positioned(
-              bottom: 120,
+              bottom: 150,
               left: 0,
               right: 0,
               child: Center(
@@ -74,34 +74,52 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 ),
               ),
             ),
-         
 
             // Next or Done button
             Positioned(
               bottom: 30,
               left: 20,
               right: 20,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                ),
-                onPressed: () {
-                  if (onLastPage) {
-                    navigateToHome(context);
-                  } else {
-                    _controller.nextPage(
-                      duration: Duration(milliseconds: 300),
-                      curve: Curves.easeIn,
-                    );
-                  }
-                },
-                child: Text(
-                  onLastPage ? "Let’s Get Started" : "Next",
-                  style: TextStyle(fontSize: 16, color: Colors.white),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        minimumSize: Size.fromHeight(50),
+                      ),
+                      onPressed: () {
+                        if (onLastPage) {
+                          navigateToHome(context);
+                        } else {
+                          _controller.nextPage(
+                            duration: Duration(milliseconds: 300),
+                            curve: Curves.easeIn,
+                          );
+                        }
+                      },
+                      child: Text(
+                        onLastPage ? "Let’s Get Started" : "Next",
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushReplacementNamed(context, '/signup');
+                      },
+                      child: Text(
+                        "I’ve already have an account",
+                        style: TextStyle(color: Colors.blueAccent),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
