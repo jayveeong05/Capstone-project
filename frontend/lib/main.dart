@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/pages/OnboardPage.dart';
-import 'pages/HomePage.dart';
 import 'pages/LoginPage.dart';
 import 'pages/SignUpPage.dart';
 

@@ -112,7 +112,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     SizedBox(height: 12),
                     TextButton(
                       onPressed: () {
-                        Navigator.pushReplacementNamed(context, '/signup');
+                        Navigator.pushReplacementNamed(context, '/login');
                       },
                       child: Text(
                         "I’ve already have an account",
@@ -153,6 +153,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   void navigateToHome(BuildContext context) {
-    Navigator.pushReplacementNamed(context, '/login'); // Change route as needed
+    Navigator.pushReplacementNamed(context, '/signup'); // Change route as needed
   }
 }
