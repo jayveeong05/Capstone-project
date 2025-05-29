@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-import '../main.dart'; // for baseUrl
+import '../main.dart';
+import 'ForgetPasswordPage.dart'; // <-- import it here
 
 class LoginPage extends StatefulWidget {
   @override
@@ -45,6 +46,15 @@ class _LoginPageState extends State<LoginPage> {
               TextField(controller: _password, decoration: InputDecoration(labelText: 'Password'), obscureText: true),
               SizedBox(height: 20),
               ElevatedButton(onPressed: _login, child: Text("Login")),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ForgetPasswordPage()),
+                  );
+                },
+                child: Text("Forgot Password?"),
+              ),
               SizedBox(height: 10),
               Text(_responseMessage, style: TextStyle(color: Colors.red)),
             ],
