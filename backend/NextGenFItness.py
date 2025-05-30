@@ -14,7 +14,8 @@ def init_db():
                 (ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT, 
                 email Text Unique,
-                password TEXT)''')
+                password TEXT,
+                role INTEGER)''')
     conn.commit()
     conn.close()
 
@@ -24,6 +25,7 @@ def signup():
     username = data.get('username')
     email = data.get('email')
     password = generate_password_hash(data.get('password'))
+    role = int(data.get('role', 1))
  
 
     conn = sqlite3.connect('NextGenFitness.db')
@@ -40,7 +42,7 @@ def signup():
         return jsonify({'error': 'Email already registered'}), 409
 
     # Insert user
-    c.execute("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", (username, email, password))
+    c.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)", (username, email, password, role))
     conn.commit()
     conn.close()
 

@@ -23,6 +23,7 @@ class _SignUpPageState extends State<SignUpPage> {
         'username': _username.text,
         'password': _password.text,
         'email': _email.text,
+        'role': '1',
       }),
     );
 
@@ -30,6 +31,12 @@ class _SignUpPageState extends State<SignUpPage> {
     setState(() {
       _responseMessage = data['message'] ?? data['error'];
     });
+
+    if(data['message'] == 'User registered successfully'){
+      Future.delayed(Duration(seconds: 2),(){
+        Navigator.pushReplacementNamed(context, '/login');
+      });
+    }
   }
 
   @override
