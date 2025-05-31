@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/MainPage.dart';
 import 'package:frontend/pages/OnboardPage.dart';
 import 'pages/LoginPage.dart';
 import 'pages/SignUpPage.dart';
@@ -21,6 +22,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => OnboardingPage(),
         '/login': (context) => LoginPage(),
         '/signup': (context) => SignUpPage(),
+        '/mainpage': (context) => MainPage(),
       },
     );
   }

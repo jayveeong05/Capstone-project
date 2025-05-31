@@ -26,27 +26,39 @@ def signup():
     email = data.get('email')
     password = generate_password_hash(data.get('password'))
     role = int(data.get('role', 1))
- 
 
     conn = sqlite3.connect('NextGenFitness.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username = ?", (username,))
+
+    # Check if username exists
+    c.execute("SELECT * FROM User WHERE username = ?", (username,))
     if c.fetchone():
         conn.close()
         return jsonify({'error': 'Username already exists'}), 409
 
     # Check if email exists
-    c.execute("SELECT * FROM users WHERE email = ?", (email,))
+    c.execute("SELECT * FROM User WHERE email = ?", (email,))
     if c.fetchone():
         conn.close()
         return jsonify({'error': 'Email already registered'}), 409
 
+    # Generate new user_id
+    c.execute("SELECT user_id FROM User ORDER BY user_id DESC LIMIT 1")
+    last = c.fetchone()
+    if last and last[0]:
+        last_num = int(last[0][1:])  # Remove 'U' and convert to int
+        new_num = last_num + 1
+    else:
+        new_num = 1
+    new_user_id = f"U{new_num:03d}"
+
     # Insert user
-    c.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)", (username, email, password, role))
+    c.execute("INSERT INTO User (user_id, username, email, password, role) VALUES (?, ?, ?, ?, ?)",
+              (new_user_id, username, email, password, role))
     conn.commit()
     conn.close()
 
-    return jsonify({'message': 'User registered successfully'}), 201
+    return jsonify({'message': 'User registered successfully', 'user_id': new_user_id}), 201
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -56,7 +68,7 @@ def login():
 
     conn = sqlite3.connect('NextGenFitness.db')
     c = conn.cursor()
-    c.execute("SELECT password FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password FROM User WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
 
@@ -72,7 +84,7 @@ def forgot_password():
 
     conn = sqlite3.connect('NextGenFitness.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE email = ?", (email,))
+    c.execute("SELECT * FROM User WHERE email = ?", (email,))
     user = c.fetchone()
     conn.close()
 

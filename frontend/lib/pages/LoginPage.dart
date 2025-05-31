@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/MainPage.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -29,6 +30,14 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _responseMessage = data['message'] ?? data['error'];
     });
+
+    // Check for success (adjust condition as per your API)
+    if (_responseMessage == 'Login successful') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => MainPage()),
+      );
+    }
   }
 
   @override
