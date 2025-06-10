@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'MealPlans.dart';
 
 class MainPage extends StatelessWidget {
   const MainPage({super.key});
@@ -55,6 +56,29 @@ class MainPage extends StatelessWidget {
                   buildQuickAction(Icons.mic, 'Voice Log'),
                   buildQuickAction(Icons.fitness_center, 'Workout'),
                 ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: Icon(Icons.restaurant_menu),
+                  label: Text('Go to Meal Plans'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MealPlansPage()),
+                    );
+                  },
+                ),
               ),
             ),
             Padding(
