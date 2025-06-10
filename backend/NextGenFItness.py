@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('backend/NextGenFitness.db')
     return conn
 
 def init_db():
@@ -186,6 +186,26 @@ def save_profile():
     conn.close()
 
     return jsonify({'message': 'Profile saved successfully'}), 200
+
+@app.route('/suggest-meals', methods=['POST'])
+def suggest_meals():
+    data = request.get_json()
+    ingredients = data.get('ingredients', [])
+    # Example meal database (in a real app, use a DB table)
+    meal_db = [
+        {'name': 'Omelette', 'ingredients': ['egg']},
+        {'name': 'Egg Salad', 'ingredients': ['egg', 'tomato']},
+        {'name': 'Grilled Chicken', 'ingredients': ['chicken']},
+        {'name': 'Chicken Rice Bowl', 'ingredients': ['chicken', 'rice']},
+        {'name': 'Veggie Fried Rice', 'ingredients': ['rice', 'tomato']},
+        {'name': 'Tomato Soup', 'ingredients': ['tomato']},
+        {'name': 'Mashed Potato', 'ingredients': ['potato']},
+        {'name': 'Potato Curry', 'ingredients': ['potato', 'tomato']},
+    ]
+    # Suggest meals if all required ingredients are available
+    available = set([i.lower() for i in ingredients])
+    suggested = [meal['name'] for meal in meal_db if set(meal['ingredients']).issubset(available)]
+    return jsonify({'meals': suggested}), 200
 
 if __name__ == '__main__':
     init_db()
