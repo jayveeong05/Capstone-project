@@ -20,6 +20,7 @@ class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _password = TextEditingController();
   String? _mainGoal; // Renamed for single main goal selection
+  double _targetWeight = 60; // New state variable for target weight
   final TextEditingController _allergy = TextEditingController();
 
   String _responseMessage = '';
@@ -42,6 +43,7 @@ class _SignUpPageState extends State<SignUpPage> {
           'height': _height,
           'age': _ageValue.toInt().toString(), // Ensure age is sent as string if backend expects it
           'goal': _mainGoal, // Send the single selected main goal
+          'target_weight': _targetWeight, // Send target weight
           'allergy': _allergy.text.isEmpty ? null : _allergy.text, // Send null if empty
         }),
       );
@@ -88,6 +90,7 @@ class _SignUpPageState extends State<SignUpPage> {
           _buildAgeInput(),
           _buildNameInput(),
           _buildMainGoalsSelection(), // Updated Main Goal Selection Page
+          _buildTargetWeightInput(), // New Target Weight Input Page
           _buildAllergyForm(),
           _buildAccountForm(),
         ],
@@ -654,6 +657,106 @@ class _SignUpPageState extends State<SignUpPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // --- NEW WIDGET FOR TARGET WEIGHT SELECTION ---
+
+  Widget _buildTargetWeightInput() {
+    return _buildFormPage(
+      title: "What is Your Target Weight (kg)?",
+      child: Column(
+        children: [
+          SizedBox(height: 16),
+          Icon(Icons.track_changes, size: 50, color: Colors.blueAccent), // New icon and color
+          SizedBox(height: 16),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.blueAccent, Colors.white], // New gradient
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ListWheelScrollView.useDelegate(
+                  controller: FixedExtentScrollController(
+                    initialItem: ((_targetWeight - 30) * 2).toInt(),
+                  ),
+                  itemExtent: 50,
+                  physics: FixedExtentScrollPhysics(),
+                  onSelectedItemChanged: (index) {
+                    setState(() {
+                      _targetWeight = 30 + index * 0.5;
+                    });
+                  },
+                  perspective: 0.002,
+                  diameterRatio: 1.5,
+                  squeeze: 1.2,
+                  childDelegate: ListWheelChildBuilderDelegate(
+                    childCount: 241, // Range for 30kg to 150kg (241 items for 0.5 increments)
+                    builder: (context, index) {
+                      final value = 30 + index * 0.5;
+                      final isSelected = (_targetWeight - value).abs() < 0.01;
+
+                      return Center(
+                        child: Text(
+                          value.toStringAsFixed(1),
+                          style: TextStyle(
+                            fontSize: isSelected ? 28 : 20,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w400,
+                            color: isSelected ? Colors.blueAccent.shade700 : Colors.grey, // New color
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 75,
+                child: Container(
+                  width: 120,
+                  height: 2,
+                  color: Colors.blueAccent.shade700, // New color
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          Text(
+            "${_targetWeight.toStringAsFixed(1)} kg",
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          SizedBox(height: 30),
+          ElevatedButton(
+            onPressed: _nextPage,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent, // New button color
+              padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text("Next", style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
