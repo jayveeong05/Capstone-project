@@ -100,7 +100,7 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
       });
 
       if (response.statusCode == 200 && data['message'] == 'User registered successfully') {
-        Future.delayed(Duration(seconds: 2), () {
+        Future.delayed(Duration(seconds: 1), () {
           Navigator.pushReplacementNamed(context, '/login');
         });
       }
@@ -1067,7 +1067,7 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                   child: IconButton(
                     icon: Icon(Icons.arrow_back_rounded, size: 28),
                     onPressed: () {
-                      if (_pageController.page! > 0) {
+                      if (_pageController.page! > 0 && _pageController.page! < 9) {
                         _pageController.previousPage(
                           duration: Duration(milliseconds: 400),
                           curve: Curves.easeInOut,

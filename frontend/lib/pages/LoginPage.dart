@@ -1,6 +1,7 @@
 // ignore_for_file: unused_import
 
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/MainPage.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/animation.dart';
@@ -99,7 +100,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       });
 
       if (_responseMessage == 'Login successful') {
-        Navigator.pushReplacementNamed(context, '/mainpage');
+        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => MainPage()), (route) => false);
       }
     } catch (e) {
       setState(() {
