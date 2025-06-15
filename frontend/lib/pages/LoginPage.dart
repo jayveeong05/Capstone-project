@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/animation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
 
 import '../main.dart';
 import 'ForgetPasswordPage.dart';
@@ -100,6 +101,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       });
 
       if (_responseMessage == 'Login successful') {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isLoggedIn', true); // Set login status to true
+        await prefs.setString('username', _username.text); // Store username
+        // You can store other user data here if your API returns it (e.g., user_id, email, token)
+        // await prefs.setString('user_id', data['user_id']); 
+
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => MainPage()), (route) => false);
       }
     } catch (e) {

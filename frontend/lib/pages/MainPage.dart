@@ -1,7 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
 
-class MainPage extends StatelessWidget {
+class MainPage extends StatefulWidget {
   const MainPage({super.key});
+
+  @override
+  State<MainPage> createState() => _MainPageState();
+}
+
+class _MainPageState extends State<MainPage> {
+  String _username = 'User'; // Default username
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsername();
+  }
+
+  // Function to load the username from SharedPreferences
+  Future<void> _loadUsername() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _username = prefs.getString('username') ?? 'User'; // Retrieve username or default to 'User'
+    });
+  }
+
+  // Function to handle logout
+  Future<void> _logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false); // Navigate to login page
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -10,10 +39,15 @@ class MainPage extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          'Welcome, User! 👋',
+          'Welcome, $_username! 👋', // Display personalized username
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
         actions: [
+          // Logout Button
+          IconButton(
+            icon: Icon(Icons.logout, color: Colors.grey),
+            onPressed: _logout,
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: CircleAvatar(
