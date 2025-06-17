@@ -16,6 +16,7 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
+    conn = get_db_connection()
     c = conn.cursor()
 
     # Create User table
@@ -215,7 +216,10 @@ def login():
     password = data.get('password')
 
     conn = get_db_connection()
+    conn = get_db_connection()
     c = conn.cursor()
+    c.execute("SELECT user_id, password FROM User WHERE username = ?", (username,))
+    user = c.fetchone()
     c.execute("SELECT user_id, password FROM User WHERE username = ?", (username,))
     user = c.fetchone()
     conn.close()
@@ -230,6 +234,7 @@ def forgot_password():
     data = request.get_json()
     email = data.get('email')
 
+    conn = get_db_connection()
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM User WHERE email = ?", (email,))
@@ -253,7 +258,9 @@ def reset_password():
     hashed_password = generate_password_hash(new_password)
 
     conn = get_db_connection()
+    conn = get_db_connection()
     c = conn.cursor()
+    c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
     c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
     conn.commit()
     conn.close()
