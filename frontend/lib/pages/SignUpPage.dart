@@ -5,6 +5,8 @@ import 'dart:convert';
 import '../main.dart'; // for baseUrl
 
 class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
+
   @override
   _SignUpPageState createState() => _SignUpPageState();
 }

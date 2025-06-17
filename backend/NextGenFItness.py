@@ -3,13 +3,15 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import base64
+# from mealplans import register_mealplan_routes
 
 
 app = Flask(__name__)
 CORS(app)
+# register_mealplan_routes(app)
 
 def get_db_connection():
-    conn = sqlite3.connect('backend/NextGenFitness.db')
+    conn = sqlite3.connect('./backend/NextGenFitness.db')
     return conn
 
 def init_db():
@@ -190,22 +192,49 @@ def save_profile():
 @app.route('/suggest-meals', methods=['POST'])
 def suggest_meals():
     data = request.get_json()
-    ingredients = data.get('ingredients', [])
-    # Example meal database (in a real app, use a DB table)
-    meal_db = [
-        {'name': 'Omelette', 'ingredients': ['egg']},
-        {'name': 'Egg Salad', 'ingredients': ['egg', 'tomato']},
-        {'name': 'Grilled Chicken', 'ingredients': ['chicken']},
-        {'name': 'Chicken Rice Bowl', 'ingredients': ['chicken', 'rice']},
-        {'name': 'Veggie Fried Rice', 'ingredients': ['rice', 'tomato']},
-        {'name': 'Tomato Soup', 'ingredients': ['tomato']},
-        {'name': 'Mashed Potato', 'ingredients': ['potato']},
-        {'name': 'Potato Curry', 'ingredients': ['potato', 'tomato']},
-    ]
-    # Suggest meals if all required ingredients are available
-    available = set([i.lower() for i in ingredients])
-    suggested = [meal['name'] for meal in meal_db if set(meal['ingredients']).issubset(available)]
-    return jsonify({'meals': suggested}), 200
+    available_names = [name.strip().lower() for name in data.get('ingredients', [])]
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    # Get ingredient IDs for the provided names
+    if not available_names:
+        return jsonify({'meals': []})
+
+    q_marks = ','.join('?' for _ in available_names)
+    c.execute(f"SELECT ingredient_id, ingredient_name FROM Ingredient WHERE lower(ingredient_name) IN ({q_marks})", available_names)
+    id_map = {row[1].strip().lower(): row[0] for row in c.fetchall()}
+    available_ids = set(id_map.values())
+
+    # Fetch all ingredient id-name pairs for lookup
+    c.execute("SELECT ingredient_id, ingredient_name FROM Ingredient")
+    id_to_name = {str(row[0]): row[1] for row in c.fetchall()}
+
+    # Fetch all recipes
+    c.execute("SELECT recipe_id, title, description, ingredients, instructions, nutrition_info, created_at FROM RecipeLibrary")
+    recipes = c.fetchall()
+
+    suggested_meals = []
+    for recipe in recipes:
+        recipe_ids = set(recipe[3].split(','))
+        match_count = len(available_ids & recipe_ids)
+        if match_count > 0:
+            match_percentage = (match_count / len(recipe_ids)) * 100
+            # Convert ingredient IDs to names for display
+            ingredient_names = [id_to_name.get(rid.strip(), rid.strip()) for rid in recipe[3].split(',')]
+            suggested_meals.append({
+                'recipe_id': recipe[0],
+                'title': recipe[1],
+                'description': recipe[2],
+                'ingredients': ', '.join(ingredient_names),
+                'instructions': recipe[4],
+                'nutrition_info': recipe[5],
+                'created_at': recipe[6],
+                'match_percentage': round(match_percentage, 1)
+            })
+
+    suggested_meals.sort(key=lambda x: x['match_percentage'], reverse=True)
+    conn.close()
+    return jsonify({'meals': suggested_meals})
 
 if __name__ == '__main__':
     init_db()

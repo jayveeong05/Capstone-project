@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'MealPlans.dart';
+import 'MealSuggestionPage.dart';
 
 class MainPage extends StatelessWidget {
   const MainPage({super.key});

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 
-import '../main.dart';
 
 class MealPlansPage extends StatefulWidget {
   const MealPlansPage({super.key});
@@ -14,7 +13,7 @@ class MealPlansPage extends StatefulWidget {
 class _MealPlansPageState extends State<MealPlansPage> {
   final TextEditingController _ingredientController = TextEditingController();
   final List<String> _ingredients = [];
-  List<String> _suggestedMeals = [];
+  List<Map<String, dynamic>> _suggestedMeals = [];
   bool _loading = false;
   String? _error;
 
@@ -50,16 +49,17 @@ class _MealPlansPageState extends State<MealPlansPage> {
       _loading = true;
       _error = null;
     });
+    print('Sending ingredients: $_ingredients');  // Debug print
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/suggest-meals'),
+        Uri.parse('$_baseUrl/suggest-meals'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'ingredients': _ingredients}),
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
-          _suggestedMeals = List<String>.from(data['meals'] ?? []);
+          _suggestedMeals = List<Map<String, dynamic>>.from(data['meals'] ?? []);
           _loading = false;
         });
       } else {
@@ -128,16 +128,97 @@ class _MealPlansPageState extends State<MealPlansPage> {
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Text('No suggestions yet. Add ingredients to see meal ideas.'),
               )
-            else
-              Expanded(
+            else              Expanded(
                 child: ListView.builder(
                   itemCount: _suggestedMeals.length,
-                  itemBuilder: (context, index) => ListTile(
-                    leading: Icon(Icons.restaurant_menu),
-                    title: Text(_suggestedMeals[index]),
-                  ),
+                  itemBuilder: (context, index) {
+                    final meal = _suggestedMeals[index];
+                    return Card(
+                      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                      child: ListTile(
+                        leading: Icon(Icons.restaurant_menu),
+                        title: Text(meal['title'] ?? ''),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(meal['description'] ?? ''),
+                            SizedBox(height: 4),
+                            Text(
+                              'Match: ${meal['match_percentage']}%',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        isThreeLine: true,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MealDetailPage(meal: meal),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MealDetailPage extends StatelessWidget {
+  final Map<String, dynamic> meal;
+
+  const MealDetailPage({super.key, required this.meal});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(meal['title'] ?? 'Meal Detail'),
+        backgroundColor: Colors.blueAccent,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: ListView(
+          children: [
+            Text(
+              meal['title'] ?? '',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(meal['description'] ?? '', style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 16),
+            Text('Ingredients:', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(meal['ingredients'] ?? ''),
+            const SizedBox(height: 16),
+            Text('Instructions:', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(meal['instructions'] ?? ''),
+            const SizedBox(height: 16),
+            Text('Nutrition Info:', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(meal['nutrition_info'] ?? ''),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Start Cooking'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Enjoy your meal!')),
+                );
+              },
+            ),
           ],
         ),
       ),
