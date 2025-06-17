@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/pages/MainPage.dart';
 import 'package:frontend/pages/OnboardPage.dart';
+import 'package:frontend/pages/ProfilePage.dart';
 import 'pages/LoginPage.dart';
 import 'pages/SignUpPage.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
@@ -32,6 +33,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => LoginPage(),
         '/signup': (context) => SignUpPage(),
         '/mainpage': (context) => MainPage(),
+        '/profile': (context) => ProfilePage(),
       },
     );
   }

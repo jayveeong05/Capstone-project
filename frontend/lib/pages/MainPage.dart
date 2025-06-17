@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -10,11 +10,12 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   String _username = 'User'; // Default username
+  int _currentIndex = 0; // For BottomNavigationBar selection
 
   @override
   void initState() {
     super.initState();
-    _loadUsername();
+    _loadUsername(); // Load existing profile data when the page initializes
   }
 
   // Function to load the username from SharedPreferences
@@ -29,130 +30,398 @@ class _MainPageState extends State<MainPage> {
   Future<void> _logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false); // Navigate to login page
+    // Ensure you have a login route defined in your MaterialApp
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          'Welcome, $_username! 👋', // Display personalized username
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          // Logout Button
-          IconButton(
-            icon: Icon(Icons.logout, color: Colors.grey),
-            onPressed: _logout,
+  // Helper widget to build a standardized section card
+  Widget _buildSectionCard({required Widget child, Color? color, double elevation = 4}) {
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: elevation,
+      color: color ?? Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: child,
+      ),
+    );
+  }
+
+  // Helper widget to build a quick stat item
+  Widget _buildStatItem(IconData icon, String label, String value, Color color) {
+    return Expanded( // Use Expanded for even distribution
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: CircleAvatar(
-              backgroundImage: AssetImage('lib/assets/images/user_avatar.png'),
-            ),
-          )
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 3,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Today’s Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      SizedBox(height: 8),
-                      LinearProgressIndicator(value: 0.6, color: Colors.greenAccent),
-                      SizedBox(height: 8),
-                      Text('1200 / 2000 kcal')
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  buildQuickAction(Icons.fastfood, 'Meal Log'),
-                  buildQuickAction(Icons.mic, 'Voice Log'),
-                  buildQuickAction(Icons.fitness_center, 'Workout'),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-              child: Card(
-                color: Colors.blueAccent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Icon(Icons.lightbulb, color: Colors.white),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          "Keep it up! You’re only 30 mins away from your daily goal.",
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      )
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 0,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.blueAccent,
-        unselectedItemColor: Colors.grey,
-        onTap: (index) {
-          // handle navigation
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: 'Plans'),
-          BottomNavigationBarItem(icon: Icon(Icons.insights), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+          Text(
+            value,
+            style: TextStyle(
+                fontSize: 15, fontWeight: FontWeight.bold, color: color),
+          ),
         ],
       ),
     );
   }
 
-  Widget buildQuickAction(IconData icon, String label) {
+  // Helper widget to build a progress bar
+  Widget _buildProgressBar(
+      String title, double progressValue, String progressText, Color color) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: () {
-            // Handle action tap
-          },
-          child: Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: Colors.blueAccent, size: 28),
+        Text(
+          title,
+          style: const TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: progressValue,
+            backgroundColor: color.withOpacity(0.2),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+            minHeight: 10,
           ),
         ),
-        SizedBox(height: 6),
-        Text(label, style: TextStyle(fontSize: 14)),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            progressText,
+            style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
+          ),
+        ),
       ],
+    );
+  }
+
+  // Helper widget to build a quick action button (e.g., Meal Log, Voice Log)
+  Widget _buildQuickActionButton(
+      IconData icon, String label, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.blueAccent.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blueAccent.withOpacity(0.05),
+              spreadRadius: 1,
+              blurRadius: 3,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.blueAccent, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Colors.black87),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper widget to build a utility card (e.g., Exercise Library, AI Recipe)
+  Widget _buildUtilityCard(
+      IconData icon, String title, Color color, VoidCallback onPressed) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 4,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [color.withOpacity(0.7), color],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 40),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50], // Light background for modern feel
+      appBar: AppBar(
+        backgroundColor: Colors.grey[50],
+        elevation: 0,
+        title: Text(
+          'Welcome, $_username! 👋', // Display personalized username
+          style: const TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            fontFamily: 'Inter', // Assuming Inter font is available or set globally
+          ),
+        ),
+        actions: [
+          // Profile Avatar/Button (can be tapped to go to profile settings)
+          GestureDetector(
+            onTap: () {
+              Navigator.of(context).pushNamed('/profile'); // Navigate to Profile Page
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.blueAccent.withOpacity(0.1),
+                // Using a placeholder image for now, replace with actual user_avatar.png
+                // Make sure 'lib/assets/images/user_avatar.png' exists
+                // or use a different Asset, NetworkImage, or Icon as fallback
+                child: Image.asset(
+                  'lib/assets/images/user_avatar.png',
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(
+                      Icons.person,
+                      color: Colors.blueAccent,
+                      size: 28,
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1. Quick Stats/Highlights Card (Your Daily Progress)
+              _buildSectionCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your Daily Progress',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                          fontFamily: 'Inter'),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildStatItem(
+                            Icons.local_fire_department, 'Calories Left', '1200 kcal', Colors.orange),
+                        _buildStatItem(Icons.run_circle_outlined, 'Steps', '5,200 / 8,000', Colors.green),
+                        _buildStatItem(Icons.fitness_center, 'Workouts', '1/2 Done', Colors.purple),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildProgressBar(
+                      'Overall Goal Progress',
+                      0.6, // Example value
+                      '60% Completed',
+                      Colors.blueAccent,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 2. Quick Actions Section
+              const Text(
+                'Quick Actions',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                    fontFamily: 'Inter'),
+              ),
+              const SizedBox(height: 16),
+              GridView.count(
+                crossAxisCount: 2, // Two items per row
+                childAspectRatio: 2.1, // Adjusted aspect ratio to make buttons slightly shorter
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildQuickActionButton(Icons.restaurant_menu, 'Log Meal', () {
+                    // TODO: Open Meal Logging Interface
+                    print('Open Meal Logging');
+                  }),
+                  _buildQuickActionButton(Icons.mic, 'Voice Log', () {
+                    // TODO: Activate Voice Logging
+                    print('Activate Voice Log');
+                  }),
+                  _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () {
+                    // TODO: Open Meal Scanner
+                    print('Open Meal Scanner');
+                  }),
+                  _buildQuickActionButton(Icons.add_task, 'Set Goals', () {
+                    // TODO: Navigate to Goal Setting Page (or a modal)
+                    print('Set Goals');
+                  }),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // 3. Motivational Message / Daily Reminder
+              _buildSectionCard(
+                color: Colors.blueAccent.withOpacity(0.9),
+                elevation: 6, // Slightly higher elevation for emphasis
+                child: Row(
+                  children: [
+                    const Icon(Icons.lightbulb_outline,
+                        color: Colors.white, size: 30),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: Text(
+                        "Great job! You’re only 30 minutes away from your daily workout goal. Keep pushing!",
+                        style: TextStyle(color: Colors.white, fontSize: 15),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 4. Explore & Learn (Utility Features - formerly "Your Journey At A Glance")
+              const Text(
+                'Explore & Learn',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                    fontFamily: 'Inter'),
+              ),
+              const SizedBox(height: 16),
+              GridView.count(
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(), // Disable grid scrolling
+                children: [
+                  _buildUtilityCard(
+                      Icons.accessibility_new, 'Workout Plans', Colors.deepPurple,
+                      () {
+                    // TODO: Navigate to Workout Plan Page
+                    print('Navigate to Workout Plan');
+                  }),
+                  _buildUtilityCard(
+                      Icons.restaurant_menu, 'Meal Plans', Colors.teal,
+                      () {
+                    // TODO: Navigate to Meal Plan Page
+                    print('Navigate to Meal Plan');
+                  }),
+                  _buildUtilityCard(
+                      Icons.video_library, 'Exercise Library', Colors.redAccent,
+                      () {
+                    // TODO: Navigate to Exercise Library
+                    print('Navigate to Exercise Library');
+                  }),
+                  _buildUtilityCard(
+                      Icons.menu_book, 'Meal Library', Colors.deepOrangeAccent, // Changed from 'AI Recipe Ideas' to 'Meal Library'
+                      () {
+                    // TODO: Navigate to Meal Library
+                    print('Navigate to Meal Library');
+                  }),
+                  _buildUtilityCard(
+                      Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () {
+                    // TODO: Open Chatbot
+                    print('Open Chatbot');
+                  }),
+                  _buildUtilityCard(
+                      Icons.gps_fixed, 'Grocery Locator', Colors.blueGrey, () {
+                    // TODO: Navigate to Grocery Shop Locator
+                    print('Navigate to Grocery Locator');
+                  }),
+                ],
+              ),
+              const SizedBox(height: 20), // Added buffer at the very bottom
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Colors.blueAccent,
+        unselectedItemColor: Colors.grey,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        unselectedLabelStyle: const TextStyle(fontSize: 10),
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+          // Handle navigation for bottom bar based on the documentation
+          switch (index) {
+            case 0: // Home
+              // Already on Home, perhaps scroll to top or refresh
+              print('Navigated to Home');
+              break;
+            case 1: // Customize (Changed from Plans)
+              // TODO: Navigate to a consolidated Plans/Customize page or directly to Workout/Diet overview
+              print('Navigated to Customize');
+              // Example: Navigator.of(context).pushNamed('/customize');
+              break;
+            case 2: // Progress
+              // TODO: Navigate to Detailed Progress Tracking page
+              print('Navigated to Progress');
+              Navigator.of(context).pushNamed('/progress'); // Assuming a '/progress' route
+              break;
+            case 3: // Settings (aligned with Profile in this case)
+              // TODO: Navigate to Settings/Profile page
+              print('Navigated to Settings');
+              Navigator.of(context).pushNamed('/profile'); // Assuming '/profile' route
+              break;
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.tune_outlined), activeIcon: Icon(Icons.tune), label: 'Customize'), // Changed label to 'Customize', and icon to tune_outlined/tune
+          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), activeIcon: Icon(Icons.insights), label: 'Progress'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings), label: 'Settings'),
+        ],
+      ),
     );
   }
 }
