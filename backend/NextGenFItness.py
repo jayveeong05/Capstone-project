@@ -1,15 +1,22 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify,send_from_directory
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import base64
-
+import os
+import json
+import random
 
 app = Flask(__name__)
 CORS(app)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
+IMAGE_DIR = EXERCISE_FOLDER
+
 def get_db_connection():
     conn = sqlite3.connect('NextGenFitness.db')
+    conn.row_factory = sqlite3.Row  # <-- ADD THIS
     return conn
 
 def init_db():
@@ -187,6 +194,270 @@ def save_profile():
 
     return jsonify({'message': 'Profile saved successfully'}), 200
 
+@app.route('/exercise-images/<folder>/<filename>')
+def serve_exercise_image(folder, filename):
+    return send_from_directory(os.path.join(IMAGE_DIR, folder), filename)
+
+@app.route('/search')
+def search_exercises():
+    query = request.args.get('q', '').lower()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT * FROM Exercise WHERE LOWER(name) LIKE ?", ('%' + query + '%',))
+    rows = cur.fetchall()
+    conn.close()
+
+    exercises = []
+    for row in rows[:10]:  # limit to first 10 results
+        ex = dict(row)
+        
+        # Handle image URLs (assuming folder naming is like '3_4_Sit-up')
+        folder_name = ex['name'].replace('/', '_').replace(' ', '_')
+        image_dir = os.path.join(EXERCISE_FOLDER, folder_name)
+        image_urls = []
+        if os.path.exists(image_dir):
+            for filename in sorted(os.listdir(image_dir)):
+                if filename.endswith('.jpg'):
+                    image_urls.append(f'/exercise-images/{folder_name}/{filename}')
+        ex['image_urls'] = image_urls
+
+        # Convert instruction from string to list if necessary
+        if isinstance(ex['instructions'], str):
+            ex['instructions'] = [step.strip() for step in ex['instructions'].split('.') if step.strip()]
+
+        exercises.append(ex)
+
+    return jsonify({'exercises': exercises})
+
+@app.route('/exercises')
+def get_exercises():
+    import os
+
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    offset = (page - 1) * per_page
+
+    # Get filter parameters
+    level = request.args.get('level')
+    mechanic = request.args.get('mechanic')
+    equipment = request.args.get('equipment')
+    primary_muscle = request.args.get('primaryMuscle')
+    category = request.args.get('category')
+
+    query = "SELECT * FROM Exercise WHERE 1=1"
+    params = []
+
+    # Add filters dynamically
+    if level:
+        query += " AND level = ?"
+        params.append(level)
+    if mechanic:
+        query += " AND mechanic = ?"
+        params.append(mechanic)
+    if equipment:
+        query += " AND equipment = ?"
+        params.append(equipment)
+    if primary_muscle:
+        query += " AND primaryMuscles LIKE ?"
+        params.append(f"%{primary_muscle}%")
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+
+    # Add pagination
+    query += " LIMIT ? OFFSET ?"
+    params.extend([per_page, offset])
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    exercises = []
+    for row in rows:
+        ex = dict(row)
+
+        # Generate image URLs
+        folder_name = ex['name'].replace('/', '_').replace(' ', '_')
+        image_dir = os.path.join(EXERCISE_FOLDER, folder_name)
+        image_urls = []
+        if os.path.exists(image_dir):
+            for filename in sorted(os.listdir(image_dir)):
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    image_urls.append(f'/exercise-images/{folder_name}/{filename}')
+        ex['image_urls'] = image_urls
+
+        # Convert instructions string to list
+        if isinstance(ex['instructions'], str):
+            ex['instructions'] = [step.strip() for step in ex['instructions'].split('.') if step.strip()]
+
+        exercises.append(ex)
+
+    return jsonify({'exercises': exercises})
+
+@app.route('/generate-plan', methods=['POST'])
+def generate_workout_plan():
+    data = request.get_json()
+
+    user_id = data.get('user_id')
+    level = data.get('level')
+    mechanic = data.get('mechanic')
+    equipment = data.get('equipment')
+    primaryMuscle = data.get('primaryMuscle')
+    category = data.get('category')
+    duration_months = data.get('duration', 3)
+
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+
+    # Build dynamic query
+    query = "SELECT * FROM Exercise WHERE 1=1"
+    params = []
+
+    if level:
+        query += " AND level = ?"
+        params.append(level)
+    if mechanic:
+        query += " AND mechanic = ?"
+        params.append(mechanic)
+    if equipment:
+        query += " AND equipment = ?"
+        params.append(equipment)
+    if primaryMuscle:
+        query += " AND primaryMuscles = ?"
+        params.append(primaryMuscle)
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    rows = cur.fetchall()
+
+    if not rows:
+        conn.close()
+        return jsonify({'error': 'No exercises found for the selected preferences.'}), 404
+
+    exercises = [dict(row) for row in rows]
+    random.shuffle(exercises)
+
+    total_days = duration_months * 4 * 3
+    plan = exercises[:total_days]
+
+    # Group into weeks/days
+    plan_by_weeks = {}
+    for i in range(0, len(plan), 3):
+        week = i // 3 + 1
+        plan_by_weeks.setdefault(f'Week {week}', []).extend(plan[i:i + 3])
+
+    # Insert into WorkoutPlan with plan_data
+    cur.execute(
+        "INSERT INTO WorkoutPlan (user_id, duration_months) VALUES (?, ?)",
+        (user_id, duration_months)
+    )
+    plan_id = cur.lastrowid
+
+    # Insert into WorkoutPlanExercise
+    for week_str, exercises_in_week in plan_by_weeks.items():
+        week_number = int(week_str.split()[1])
+        day_number = 1
+        for ex in exercises_in_week:
+            cur.execute('''
+                INSERT INTO WorkoutPlanExercise (plan_id, exercise_id, week_number, day_number)
+                VALUES (?, ?, ?, ?)
+            ''', (plan_id, ex['Exercise_ID'], week_number, day_number))
+            day_number += 1
+
+    print("Generated plan_id:", plan_id)
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'message': 'Workout plan generated and saved',
+        'plan_id': plan_id,
+        'plan': plan_by_weeks
+    })
+@app.route('/get-plan/<int:plan_id>')
+def get_weeks(plan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT week_number FROM WorkoutPlanExercise
+        WHERE plan_id = ?
+        ORDER BY week_number
+    ''', (plan_id,))
+    
+    weeks = cursor.fetchall()
+    conn.close()
+
+    week_names = [f"Week {row['week_number']}" for row in weeks]
+    return jsonify({'weeks': week_names})
+
+@app.route('/get-plan-weeks/<int:plan_id>', methods=['GET'])
+def get_plan_weeks(plan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT week_number
+        FROM WorkoutPlanExercise
+        WHERE plan_id = ?
+        ORDER BY week_number
+    ''', (plan_id,))
+    
+    weeks = cursor.fetchall()
+    conn.close()
+
+    # Convert to "Week 1", "Week 2", ...
+    week_list = [f"Week {row['week_number']}" for row in weeks]
+    return jsonify({'weeks': week_list})
+
+@app.route('/get-plan-week/<int:plan_id>/<string:week_name>', methods=['GET'])
+def get_plan_week(plan_id, week_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Extract week number from "Week 1"
+    try:
+        week_number = int(week_name.replace("Week ", ""))
+    except ValueError:
+        return jsonify({"error": "Invalid week format"}), 400
+
+    cursor.execute('''
+        SELECT w.exercise_id, w.week_number, w.day_number, e.*
+        FROM WorkoutPlanExercise w
+        JOIN Exercise e ON w.exercise_id = e.Exercise_ID
+        WHERE w.plan_id = ? AND w.week_number = ?
+        ORDER BY w.day_number
+    ''', (plan_id, week_number))
+
+    exercises = cursor.fetchall()
+    result = []
+    for ex in exercises:
+        exercise_dict = dict(ex)
+        # Decode instructions
+        exercise_dict['instructions'] = [s.strip() for s in exercise_dict['instructions'].split('.') if s.strip()]
+        
+        # Handle image URLs
+        folder = exercise_dict['name'].replace('/', '_').replace(' ', '_')
+        image_dir = os.path.join(EXERCISE_FOLDER, folder)
+        if os.path.exists(image_dir):
+            exercise_dict['image_urls'] = [
+                f"/exercise-images/{folder}/{img}" for img in sorted(os.listdir(image_dir))
+                if img.lower().endswith(('.jpg', '.jpeg', '.png'))
+            ]
+        else:
+            exercise_dict['image_urls'] = []
+
+        result.append(exercise_dict)
+
+    conn.close()
+    return jsonify({'exercises': result})
+
 if __name__ == '__main__':
-    init_db()
     app.run(debug=True)
+
