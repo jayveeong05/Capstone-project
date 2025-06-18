@@ -3,12 +3,10 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import base64
-# from mealplans import register_mealplan_routes
 
 
 app = Flask(__name__)
 CORS(app)
-# register_mealplan_routes(app)
 
 def get_db_connection():
     conn = sqlite3.connect('./backend/NextGenFitness.db')
