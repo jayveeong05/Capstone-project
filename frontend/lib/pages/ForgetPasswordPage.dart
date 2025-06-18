@@ -7,8 +7,6 @@ import '../main.dart';
 import 'ResetPasswordPage.dart';
 
 class ForgetPasswordPage extends StatefulWidget {
-  const ForgetPasswordPage({super.key});
-
   @override
   _ForgotPasswordPageState createState() => _ForgotPasswordPageState();
 }
