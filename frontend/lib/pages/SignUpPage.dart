@@ -7,6 +7,8 @@ import 'package:flutter/animation.dart';
 import '../main.dart';
 
 class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
+
   @override
   _SignUpPageState createState() => _SignUpPageState();
 }

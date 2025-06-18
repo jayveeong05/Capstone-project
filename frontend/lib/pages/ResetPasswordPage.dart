@@ -5,9 +5,15 @@ import 'dart:convert';
 import '../main.dart'; // Your baseUrl should be defined here
 import 'LoginPage.dart'; // Adjust the import if LoginPage is in a different path
 
+<<<<<<< HEAD
 class Resetpasswordpage extends StatefulWidget {
   final String email;
   Resetpasswordpage({required this.email});
+=======
+class Resetpasswordpage extends StatefulWidget{
+      final String email;
+      const Resetpasswordpage({super.key, required this.email});
+>>>>>>> meal-plan
 
   @override
   ResetpasswordpageState createState() => ResetpasswordpageState();

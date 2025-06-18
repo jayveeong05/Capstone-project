@@ -12,6 +12,8 @@ import '../main.dart';
 import 'ForgetPasswordPage.dart';
 
 class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
   @override
   _LoginPageState createState() => _LoginPageState();
 }
