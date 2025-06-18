@@ -1,20 +1,8 @@
-<<<<<<< HEAD
-=======
-import 'dart:io';
-
->>>>>>> meal-plan
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-<<<<<<< HEAD
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
-=======
-class ProfilePage extends StatefulWidget{
-  final String userId;
-
-  const ProfilePage({super.key, required this.userId});
->>>>>>> meal-plan
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
