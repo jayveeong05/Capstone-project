@@ -153,6 +153,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   void navigateToHome(BuildContext context) {
-    Navigator.pushReplacementNamed(context, '/signup'); // Change route as needed
+    Navigator.pushNamed(context, '/login'); // Changed route to /login
   }
 }

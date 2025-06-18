@@ -37,6 +37,8 @@ dependencies:
   http: ^1.4.0
   image_picker: ^1.0.0
   smooth_page_indicator: ^1.2.1
+  image_picker: ^1.1.2
+  shared_preferences: ^2.0.15
   shared_preferences: ^2.2.2
 
 dev_dependencies:
