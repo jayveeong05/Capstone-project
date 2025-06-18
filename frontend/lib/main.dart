@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/pages/MainPage.dart';
+import 'package:frontend/pages/main_page.dart';
 import 'package:frontend/pages/onboard_page.dart';
 import 'pages/login_page.dart';
 import 'pages/signup_page.dart';
+import 'pages//profile_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const String baseUrl = "http://10.0.2.2:5000";
 

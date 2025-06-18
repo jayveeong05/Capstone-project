@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import '../main.dart'; // Your baseUrl should be defined here
-import 'LoginPage.dart'; // Adjust the import if LoginPage is in a different path
+import 'login_page.dart'; // Adjust the import if LoginPage is in a different path
 
 class Resetpasswordpage extends StatefulWidget {
   final String email;
