@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'MealSuggestionPage.dart';
 import 'MealScannerScreen.dart';
-import 'chatbot_page.dart';
+import 'ChatbotPage.dart';
 
 class MainPage extends StatelessWidget {
   const MainPage({super.key});
