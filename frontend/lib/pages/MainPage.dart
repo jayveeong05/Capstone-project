@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'MealSuggestionPage.dart';
+import 'MealScannerScreen.dart';
 
 class MainPage extends StatelessWidget {
   const MainPage({super.key});
@@ -49,12 +50,16 @@ class MainPage extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+              child: Row(              mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  buildQuickAction(Icons.fastfood, 'Meal Log'),
-                  buildQuickAction(Icons.mic, 'Voice Log'),
-                  buildQuickAction(Icons.fitness_center, 'Workout'),
+                  buildQuickAction(Icons.camera_alt, 'Scan Meal', onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MealScannerScreen(userId: 'user123')), // TODO: Replace with actual user ID
+                    );
+                  }),
+                  buildQuickAction(Icons.mic, 'Voice Log', onTap: () {}),
+                  buildQuickAction(Icons.fitness_center, 'Workout', onTap: () {}),
                 ],
               ),
             ),
@@ -123,14 +128,11 @@ class MainPage extends StatelessWidget {
       ),
     );
   }
-
-  Widget buildQuickAction(IconData icon, String label) {
+  Widget buildQuickAction(IconData icon, String label, {VoidCallback? onTap}) {
     return Column(
       children: [
         InkWell(
-          onTap: () {
-            // Handle action tap
-          },
+          onTap: onTap,
           child: Container(
             padding: EdgeInsets.all(12),
             decoration: BoxDecoration(

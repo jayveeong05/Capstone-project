@@ -19,11 +19,16 @@ class _MealPlansPageState extends State<MealPlansPage> {
 
   final String _baseUrl = 'http://10.0.2.2:5000'; // Change if backend runs elsewhere
 
-  void _addIngredient() {
-    final ingredient = _ingredientController.text.trim().toLowerCase();
-    if (ingredient.isNotEmpty && !_ingredients.contains(ingredient)) {
+  // Add a list of common ingredients
+  final List<String> _commonIngredients = [
+    'egg', 'chicken', 'rice', 'tomato', 'onion', 'potato', 'cheese', 'milk', 'bread', 'beef', 'carrot', 'spinach', 'garlic', 'pepper', 'fish'
+  ];
+
+  void _addIngredient([String? ingredient]) {
+    final value = (ingredient ?? _ingredientController.text).trim().toLowerCase();
+    if (value.isNotEmpty && !_ingredients.contains(value)) {
       setState(() {
-        _ingredients.add(ingredient);
+        _ingredients.add(value);
         _ingredientController.clear();
       });
       _fetchMealSuggestions();
@@ -88,7 +93,8 @@ class _MealPlansPageState extends State<MealPlansPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Enter available ingredients:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text('Select or enter available ingredients:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -100,8 +106,35 @@ class _MealPlansPageState extends State<MealPlansPage> {
                 ),
                 IconButton(
                   icon: Icon(Icons.add),
-                  onPressed: _addIngredient,
+                  onPressed: () => _addIngredient(),
                 ),
+              ],
+            ),
+            // Expandable selection card for common ingredients
+            ExpansionTile(
+              title: Text("Choose from common ingredients"),
+              leading: Icon(Icons.list_alt),
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _commonIngredients.map((ingredient) {
+                    final isSelected = _ingredients.contains(ingredient);
+                    return FilterChip(
+                      label: Text(ingredient),
+                      selected: isSelected,
+                      selectedColor: Colors.blueAccent.withOpacity(0.7),
+                      onSelected: (selected) {
+                        if (selected && !isSelected) {
+                          _addIngredient(ingredient);
+                        } else if (!selected && isSelected) {
+                          _removeIngredient(ingredient);
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+                SizedBox(height: 8),
               ],
             ),
             Wrap(
@@ -128,7 +161,8 @@ class _MealPlansPageState extends State<MealPlansPage> {
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Text('No suggestions yet. Add ingredients to see meal ideas.'),
               )
-            else              Expanded(
+            else
+              Expanded(
                 child: ListView.builder(
                   itemCount: _suggestedMeals.length,
                   itemBuilder: (context, index) {
@@ -185,33 +219,109 @@ class MealDetailPage extends StatelessWidget {
         title: Text(meal['title'] ?? 'Meal Detail'),
         backgroundColor: Colors.blueAccent,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ListView(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              meal['title'] ?? '',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      meal['title'] ?? '',
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      meal['description'] ?? '',
+                      style: const TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    const Divider(height: 28, thickness: 1.2),
+                    Row(
+                      children: [
+                        Icon(Icons.shopping_basket, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        Text('Ingredients:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(meal['ingredients'] ?? '', style: TextStyle(fontSize: 15)),
+                    const Divider(height: 28, thickness: 1.2),
+                    Row(
+                      children: [
+                        Icon(Icons.menu_book, color: Colors.blueAccent),
+                        const SizedBox(width: 8),
+                        Text('Instructions:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(meal['instructions'] ?? '', style: TextStyle(fontSize: 15)),
+                    const Divider(height: 28, thickness: 1.2),
+                    Row(
+                      children: [
+                        Icon(Icons.local_fire_department, color: Colors.redAccent),
+                        const SizedBox(width: 8),
+                        Text('Nutrition Info:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Improved Nutrition Info Card
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withOpacity(0.07),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.redAccent.withOpacity(0.2)),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _NutritionItem(
+                            icon: Icons.local_fire_department,
+                            label: 'Calories',
+                            value: _extractNutrition(meal['nutrition_info'], 'Calories'),
+                            color: Colors.deepOrange,
+                          ),
+                          _NutritionItem(
+                            icon: Icons.fitness_center,
+                            label: 'Protein',
+                            value: _extractNutrition(meal['nutrition_info'], 'Protein'),
+                            color: Colors.green,
+                          ),
+                          _NutritionItem(
+                            icon: Icons.bubble_chart,
+                            label: 'Carbs',
+                            value: _extractNutrition(meal['nutrition_info'], 'Carbs'),
+                            color: Colors.blue,
+                          ),
+                          _NutritionItem(
+                            icon: Icons.oil_barrel,
+                            label: 'Fat',
+                            value: _extractNutrition(meal['nutrition_info'], 'Fat'),
+                            color: Colors.purple,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(meal['description'] ?? '', style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 16),
-            Text('Ingredients:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(meal['ingredients'] ?? ''),
-            const SizedBox(height: 16),
-            Text('Instructions:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(meal['instructions'] ?? ''),
-            const SizedBox(height: 16),
-            Text('Nutrition Info:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(meal['nutrition_info'] ?? ''),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             ElevatedButton.icon(
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Start Cooking'),
+              label: const Text('Start Cooking', style: TextStyle(fontSize: 18)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(48),
+                minimumSize: const Size.fromHeight(56),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                elevation: 3,
               ),
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -224,4 +334,44 @@ class MealDetailPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NutritionItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _NutritionItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 26),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 15),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 13, color: Colors.black87),
+        ),
+      ],
+    );
+  }
+}
+
+// Helper function to extract nutrition values from the string
+String _extractNutrition(String? info, String key) {
+  if (info == null) return '-';
+  final regex = RegExp('$key: *([\\d.]+\\w*)', caseSensitive: false);
+  final match = regex.firstMatch(info);
+  return match != null ? match.group(1)! : '-';
 }
