@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'fitness_page.dart';
+import 'all_workoutplan_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -17,7 +19,6 @@ class _MainPageState extends State<MainPage> {
     super.initState();
     _loadUsername(); // Load existing profile data when the page initializes
   }
-
   // Function to load the username from SharedPreferences
   Future<void> _loadUsername() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -340,12 +341,26 @@ class _MainPageState extends State<MainPage> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(), // Disable grid scrolling
                 children: [
-                  _buildUtilityCard(
-                      Icons.accessibility_new, 'Workout Plans', Colors.deepPurple,
-                      () {
-                    // TODO: Navigate to Workout Plan Page
-                    print('Navigate to Workout Plan');
-                  }),
+                    _buildUtilityCard(
+                      Icons.accessibility_new,
+                      'Workout Plans',
+                      Colors.deepPurple,
+                      () async {
+                        SharedPreferences prefs = await SharedPreferences.getInstance();
+                        int? userId = prefs.getInt('user_id');
+                        if (userId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AllWorkoutPlansPage(userId: userId),
+                    
+                            ),
+                          );
+                        } else {
+                          print('❌ No user ID found in SharedPreferences');
+                        }
+                      },
+                    ),
                   _buildUtilityCard(
                       Icons.restaurant_menu, 'Meal Plans', Colors.teal,
                       () {
@@ -355,8 +370,10 @@ class _MainPageState extends State<MainPage> {
                   _buildUtilityCard(
                       Icons.video_library, 'Exercise Library', Colors.redAccent,
                       () {
-                    // TODO: Navigate to Exercise Library
-                    print('Navigate to Exercise Library');
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => FitnessPage()),
+                    );
                   }),
                   _buildUtilityCard(
                       Icons.menu_book, 'Meal Library', Colors.deepOrangeAccent, // Changed from 'AI Recipe Ideas' to 'Meal Library'

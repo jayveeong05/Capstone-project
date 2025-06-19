@@ -3,24 +3,23 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import base64
-import uuid
 import re # Import the re module for regeximport os
-import json
 import random
 import os
-app = Flask(__name__)
-CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
 IMAGE_DIR = EXERCISE_FOLDER
 
+app = Flask(__name__)
+CORS(app)
+
 def get_db_connection():
     conn = sqlite3.connect('NextGenFitness.db')
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    conn = get_db_connection()
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -221,16 +220,19 @@ def login():
     password = data.get('password')
 
     conn = get_db_connection()
-    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT user_id, password FROM User WHERE username = ?", (username,))
-    user = c.fetchone()
-    c.execute("SELECT user_id, password FROM User WHERE username = ?", (username,))
+    # Fetch role along with other user data
+    c.execute("SELECT user_id, password, role FROM User WHERE username = ?", (username,))
     user = c.fetchone()
     conn.close()
 
     if user and check_password_hash(user['password'], password):
-        return jsonify({'message': 'Login successful', 'user_id': user['user_id']}), 200
+        # Return role in the response
+        return jsonify({
+            'message': 'Login successful',
+            'user_id': user['user_id'],
+            'role': user['role']  # Add role to response
+        }), 200
     else:
         return jsonify({'error': 'Invalid username or password'}), 401
 
@@ -239,7 +241,6 @@ def forgot_password():
     data = request.get_json()
     email = data.get('email')
 
-    conn = get_db_connection()
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM User WHERE email = ?", (email,))
@@ -263,9 +264,7 @@ def reset_password():
     hashed_password = generate_password_hash(new_password)
 
     conn = get_db_connection()
-    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
     c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
     conn.commit()
     conn.close()
@@ -428,13 +427,16 @@ def get_exercises():
 def generate_workout_plan():
     data = request.get_json()
 
-    user_id = data.get('user_id')
+    user_id = str(data.get('user_id'))
     level = data.get('level')
     mechanic = data.get('mechanic')
     equipment = data.get('equipment')
     primaryMuscle = data.get('primaryMuscle')
     category = data.get('category')
     duration_months = data.get('duration', 3)
+
+    if user_id.isdigit():
+        user_id = f"U{int(user_id):03d}"  # pad to 3 digits with U prefix
 
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
@@ -507,6 +509,17 @@ def generate_workout_plan():
         'plan_id': plan_id,
         'plan': plan_by_weeks
     })
+@app.route('/get-plans/<user_id>', methods=['GET'])
+def get_plans(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM WorkoutPlan WHERE user_id = ?', (user_id,))
+    plans = cursor.fetchall()
+    conn.close()
+
+    return jsonify({'plans': [dict(plan) for plan in plans]})
+
 @app.route('/get-plan/<int:plan_id>')
 def get_weeks(plan_id):
     conn = get_db_connection()

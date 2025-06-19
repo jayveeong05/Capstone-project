@@ -72,7 +72,13 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
   }
 
   Future<void> _signup() async {
+    // Validate form before proceeding
+    if (!_isAccountFormValid()) {
+      return;
+    }
+
     setState(() => _isLoading = true);
+    _responseMessage = '';
 
     try {
       final response = await http.post(
@@ -143,7 +149,7 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
           
           PageView(
             controller: _pageController,
-            physics: NeverScrollableScrollPhysics(),
+            physics: ClampingScrollPhysics(), // Changed physics
             children: [
               _buildGenderSelection(),
               _buildWeightInput(),
@@ -959,7 +965,12 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
-                      onTap: _isFormValid() ? _signup : null,
+                      onTap: () {
+                        print("Create Account button pressed");
+                        if (_isAccountFormValid()) {
+                          _signup();
+                        }
+                      },
                       child: Center(
                         child: Text(
                           "Create Account",
@@ -1144,11 +1155,39 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
     );
   }
 
-  bool _isFormValid() {
-    return _email.text.trim().isNotEmpty &&
-        _password.text.trim().isNotEmpty &&
-        _email.text.contains('@') &&
-        _password.text.length >= 6;
+  // Improved form validation with error messages
+  bool _isAccountFormValid() {
+    if (_email.text.trim().isEmpty) {
+      setState(() {
+        _responseMessage = "Email cannot be empty";
+      });
+      return false;
+    }
+    
+    if (!_email.text.contains('@')) {
+      setState(() {
+        _responseMessage = "Please enter a valid email address";
+      });
+      return false;
+    }
+    
+    if (_password.text.trim().isEmpty) {
+      setState(() {
+        _responseMessage = "Password cannot be empty";
+      });
+      return false;
+    }
+    
+    if (_password.text.length < 6) {
+      setState(() {
+        _responseMessage = "Password must be at least 6 characters";
+      });
+      return false;
+    }
+    
+    // Clear any previous error messages if form is valid
+    setState(() => _responseMessage = '');
+    return true;
   }
 }
 

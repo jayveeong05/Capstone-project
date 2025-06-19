@@ -35,7 +35,7 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
 
   Future<void> _generatePlan() async {
   final prefs = await SharedPreferences.getInstance();
-  final userId = prefs.getString('user_id');
+  final userId = prefs.getInt('user_id');
   
   if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
