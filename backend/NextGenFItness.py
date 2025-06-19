@@ -635,19 +635,41 @@ def cleanup_old_files():
 
 @app.route('/api/chatbot', methods=['POST'])
 def chatbot():
-    data = request.get_json()
-    user_message = data.get('message', '')
-    # Optionally, add user context here
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '')
+        
+        # Define the system role/prompt for workout and diet focus
+        system_prompt = """You are a knowledgeable fitness and nutrition assistant. Your role is to help users with:
 
-    model = genai.GenerativeModel('gemini-pro')
-    response = model.generate_content(user_message)
-    reply = response.text
+1. Workout routines and exercise recommendations
+2. Diet plans and nutritional advice
+3. Healthy lifestyle tips
+4. Weight management strategies
+5. Muscle building and strength training guidance
+6. Meal planning and recipe suggestions
+7. Supplement advice (general information only)
 
-    return jsonify({'reply': reply, 'success': True})
+Guidelines:
+- Always prioritize safety and recommend consulting healthcare professionals for medical concerns
+- Provide evidence-based advice when possible
+- Ask clarifying questions about user's goals, current fitness level, and any limitations
+- Be encouraging and supportive
+- If asked about topics outside fitness/nutrition, politely redirect the conversation back to health and wellness
 
-# Configure Google API key
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+Now, please respond to the user's question about fitness, nutrition, or wellness."""
 
+        # Combine system prompt with user message
+        full_prompt = f"{system_prompt}\n\nUser Question: {user_message}"
+        
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(full_prompt)
+        reply = response.text
+        
+        return jsonify({'reply': reply, 'success': True})
+    except Exception as e:
+        print(f"Error in /api/chatbot: {e}")
+        return jsonify({'reply': 'Sorry, something went wrong. Please try asking about your fitness or nutrition goals!', 'success': False}), 500
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('./backend/temp', exist_ok=True)
