@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'MealSuggestionPage.dart';
 import 'MealScannerScreen.dart';
+import 'chatbot_page.dart';
 
 class MainPage extends StatelessWidget {
   const MainPage({super.key});
@@ -108,6 +109,25 @@ class MainPage extends StatelessWidget {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildUtilityCard(Icons.access_alarm, 'Set Reminder', Colors.orange, () {
+                    // Reminder action
+                  }),
+                  _buildUtilityCard(Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (context) => ChatbotPage(userId: 'user123'),
+                    ));
+                  }),
+                  _buildUtilityCard(Icons.help, 'Help & Support', Colors.redAccent, () {
+                    // Help action
+                  }),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -145,6 +165,27 @@ class MainPage extends StatelessWidget {
         SizedBox(height: 6),
         Text(label, style: TextStyle(fontSize: 14)),
       ],
+    );
+  }
+
+  Widget _buildUtilityCard(IconData icon, String label, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 28),
+            SizedBox(height: 4),
+            Text(label, style: TextStyle(fontSize: 12, color: color)),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -13,6 +13,11 @@ from PIL import Image
 import requests
 import os
 from food_recognition import FoodRecognition
+import os
+import google.generativeai as genai
+
+GOOGLE_API_KEY= 'AIzaSyD5Ilz_JtzhJW_aZup7xBFZs9cOzyW_G6M'
+genai.configure(api_key=GOOGLE_API_KEY)
 
 # Initialize Clarifai food recognition
 food_recognizer = FoodRecognition('5deb6d79da89437a81b87a21accd1440')
@@ -627,6 +632,21 @@ def cleanup_old_files():
         
     except Exception as e:
         return jsonify({'error': f'Error during cleanup: {str(e)}', 'success': False}), 500
+
+@app.route('/api/chatbot', methods=['POST'])
+def chatbot():
+    data = request.get_json()
+    user_message = data.get('message', '')
+    # Optionally, add user context here
+
+    model = genai.GenerativeModel('gemini-pro')
+    response = model.generate_content(user_message)
+    reply = response.text
+
+    return jsonify({'reply': reply, 'success': True})
+
+# Configure Google API key
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 if __name__ == '__main__':
     # Create necessary directories
