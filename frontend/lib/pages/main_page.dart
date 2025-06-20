@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'fitness_page.dart';
 import 'all_workoutplan_page.dart';
+import 'MealPlansPage.dart';
+import 'MealScannerScreen.dart';
+import 'ChatbotPage.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -347,7 +350,11 @@ void _showNotifications(BuildContext context) {
                   }),
                   _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () {
                     // TODO: Open Meal Scanner
-                    print('Open Meal Scanner');
+                    // print('Open Meal Scanner');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MealScannerScreen(userId: 'user123')), // TODO: Replace with actual user ID
+                    );
                   }),
                   _buildQuickActionButton(Icons.add_task, 'Set Goals', () {
                     // TODO: Navigate to Goal Setting Page (or a modal)
@@ -418,7 +425,11 @@ void _showNotifications(BuildContext context) {
                       Icons.restaurant_menu, 'Meal Plans', Colors.teal,
                       () {
                     // TODO: Navigate to Meal Plan Page
-                    print('Navigate to Meal Plan');
+                    // print('Navigate to Meal Plan');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MealPlansPage()),
+                    );
                   }),
                   _buildUtilityCard(
                       Icons.video_library, 'Exercise Library', Colors.redAccent,
@@ -437,7 +448,10 @@ void _showNotifications(BuildContext context) {
                   _buildUtilityCard(
                       Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () {
                     // TODO: Open Chatbot
-                    print('Open Chatbot');
+                    //print('Open Chatbot');
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (context) => ChatbotPage(userId: 'user123'),
+                    ));
                   }),
                   _buildUtilityCard(
                       Icons.gps_fixed, 'Grocery Locator', Colors.blueGrey, () {

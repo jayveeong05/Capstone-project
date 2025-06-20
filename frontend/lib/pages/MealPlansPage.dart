@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
-
+import 'MealDetailPage.dart';
 
 class MealPlansPage extends StatefulWidget {
   const MealPlansPage({super.key});
@@ -17,13 +17,17 @@ class _MealPlansPageState extends State<MealPlansPage> {
   bool _loading = false;
   String? _error;
 
-  final String _baseUrl = 'http://10.0.2.2:5000'; // Change if backend runs elsewhere
+  final String _baseUrl = 'http://10.0.2.2:5000';
 
-  void _addIngredient() {
-    final ingredient = _ingredientController.text.trim().toLowerCase();
-    if (ingredient.isNotEmpty && !_ingredients.contains(ingredient)) {
+  final List<String> _commonIngredients = [
+    'egg', 'chicken', 'rice', 'tomato', 'onion', 'potato', 'cheese', 'milk', 'bread', 'beef', 'carrot', 'spinach', 'garlic', 'pepper', 'fish'
+  ];
+
+  void _addIngredient([String? ingredient]) {
+    final value = (ingredient ?? _ingredientController.text).trim().toLowerCase();
+    if (value.isNotEmpty && !_ingredients.contains(value)) {
       setState(() {
-        _ingredients.add(ingredient);
+        _ingredients.add(value);
         _ingredientController.clear();
       });
       _fetchMealSuggestions();
@@ -49,7 +53,6 @@ class _MealPlansPageState extends State<MealPlansPage> {
       _loading = true;
       _error = null;
     });
-    print('Sending ingredients: $_ingredients');  // Debug print
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/suggest-meals'),
@@ -88,30 +91,89 @@ class _MealPlansPageState extends State<MealPlansPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Enter available ingredients:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _ingredientController,
-                    decoration: InputDecoration(hintText: 'e.g. egg, chicken, rice'),
-                    onSubmitted: (_) => _addIngredient(),
+            Text('Select or enter available ingredients:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Material(
+              elevation: 2,
+              borderRadius: BorderRadius.circular(24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _ingredientController,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. egg, chicken, rice',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      ),
+                      onSubmitted: (_) => _addIngredient(),
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.add),
-                  onPressed: _addIngredient,
-                ),
-              ],
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.blueAccent,
+                      child: IconButton(
+                        icon: Icon(Icons.add, color: Colors.white),
+                        onPressed: () => _addIngredient(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ExpansionTile(
+                title: Text("Choose from common ingredients", style: TextStyle(fontWeight: FontWeight.w600)),
+                leading: Icon(Icons.list_alt),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: _commonIngredients.map((ingredient) {
+                        final isSelected = _ingredients.contains(ingredient);
+                        return FilterChip(
+                          label: Text(ingredient),
+                          selected: isSelected,
+                          selectedColor: Colors.blueAccent.withOpacity(0.7),
+                          backgroundColor: Colors.grey[200],
+                          elevation: isSelected ? 4 : 0,
+                          onSelected: (selected) {
+                            if (selected && !isSelected) {
+                              _addIngredient(ingredient);
+                            } else if (!selected && isSelected) {
+                              _removeIngredient(ingredient);
+                            }
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                ],
+              ),
             ),
             Wrap(
               spacing: 8,
               children: _ingredients.map((ingredient) => Chip(
                 label: Text(ingredient),
+                backgroundColor: Colors.blueAccent.withOpacity(0.15),
+                elevation: 2,
+                deleteIcon: Icon(Icons.close, size: 18),
                 onDeleted: () => _removeIngredient(ingredient),
               )).toList(),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text('Suggested Meals:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             if (_loading)
               Padding(
@@ -128,27 +190,52 @@ class _MealPlansPageState extends State<MealPlansPage> {
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Text('No suggestions yet. Add ingredients to see meal ideas.'),
               )
-            else              Expanded(
+            else
+              Expanded(
                 child: ListView.builder(
                   itemCount: _suggestedMeals.length,
                   itemBuilder: (context, index) {
                     final meal = _suggestedMeals[index];
+                    final match = double.tryParse(meal['match_percentage'].toString()) ?? 0.0;
                     return Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: match > 50 ? Colors.green : Colors.orange,
+                          width: 1.5,
+                        ),
+                      ),
                       margin: EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                      elevation: 2,
                       child: ListTile(
-                        leading: Icon(Icons.restaurant_menu),
-                        title: Text(meal['title'] ?? ''),
+                        leading: Icon(Icons.restaurant_menu, color: Colors.blueAccent, size: 32),
+                        title: Text(meal['title'] ?? '', style: TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(meal['description'] ?? ''),
-                            SizedBox(height: 4),
-                            Text(
-                              'Match: ${meal['match_percentage']}%',
-                              style: TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(Icons.verified, color: Colors.green, size: 18),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Match: ${meal['match_percentage']}%',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: LinearProgressIndicator(
+                                    value: match / 100,
+                                    backgroundColor: Colors.grey[200],
+                                    color: match > 50 ? Colors.green : Colors.orange,
+                                    minHeight: 6,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -166,59 +253,6 @@ class _MealPlansPageState extends State<MealPlansPage> {
                   },
                 ),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class MealDetailPage extends StatelessWidget {
-  final Map<String, dynamic> meal;
-
-  const MealDetailPage({super.key, required this.meal});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(meal['title'] ?? 'Meal Detail'),
-        backgroundColor: Colors.blueAccent,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ListView(
-          children: [
-            Text(
-              meal['title'] ?? '',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(meal['description'] ?? '', style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 16),
-            Text('Ingredients:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(meal['ingredients'] ?? ''),
-            const SizedBox(height: 16),
-            Text('Instructions:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(meal['instructions'] ?? ''),
-            const SizedBox(height: 16),
-            Text('Nutrition Info:', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(meal['nutrition_info'] ?? ''),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Start Cooking'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(48),
-              ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Enjoy your meal!')),
-                );
-              },
-            ),
           ],
         ),
       ),
