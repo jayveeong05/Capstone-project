@@ -1,3 +1,4 @@
+// profile_page.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -22,6 +23,10 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _fitnessGoalsController = TextEditingController();
   final TextEditingController _medicalConditionsController = TextEditingController();
   final TextEditingController _feedbackTextController = TextEditingController(); // New feedback controller
+  final TextEditingController _currentPasswordController = TextEditingController(); // New
+  final TextEditingController _newPasswordController = TextEditingController(); // New
+  final TextEditingController _confirmNewPasswordController = TextEditingController(); // New
+
 
   String? _selectedFeedbackCategory; // New for feedback category
   String? _userId; // To store the logged-in user's ID
@@ -54,6 +59,9 @@ class _ProfilePageState extends State<ProfilePage> {
     _fitnessGoalsController.dispose();
     _medicalConditionsController.dispose();
     _feedbackTextController.dispose(); // Dispose feedback controller
+    _currentPasswordController.dispose(); // New
+    _newPasswordController.dispose(); // New
+    _confirmNewPasswordController.dispose(); // New
     super.dispose();
   }
 
@@ -210,11 +218,132 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
     );
-
     if (result != null) {
       setState(() => _locationController.text = result);
     }
   }
+
+  // New function to show password reset dialog
+  Future<void> _showResetPasswordDialog() async {
+    _currentPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmNewPasswordController.clear();
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // User must tap button to close
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Reset Password'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextField(
+                  controller: _currentPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Current Password'),
+                ),
+                TextField(
+                  controller: _newPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'New Password'),
+                ),
+                TextField(
+                  controller: _confirmNewPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Confirm New Password'),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              child: const Text('Reset Password'),
+              onPressed: () {
+                _resetPassword();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // New function to handle password reset logic
+  Future<void> _resetPassword() async {
+    if (_userId == null || _userId!.isEmpty) {
+      _showSnackBar('User not logged in or user ID is missing.', Colors.red);
+      return;
+    }
+
+    // --- ADDED MODIFICATION HERE ---
+    // Ensure the user ID is formatted with 'U' and padded to 3 digits
+    String formattedUserId = _userId!;
+    if (!formattedUserId.startsWith('U')) {
+      int? userIdInt = int.tryParse(formattedUserId);
+      if (userIdInt != null) {
+        formattedUserId = 'U${userIdInt.toString().padLeft(3, '0')}';
+      } else {
+        print('Warning: _userId could not be parsed as an integer for formatting: $_userId');
+        _showSnackBar('User ID is in an unexpected format. Cannot reset password.', Colors.red);
+        return;
+      }
+    }
+    // --- END ADDED MODIFICATION ---
+
+    final String currentPassword = _currentPasswordController.text;
+    final String newPassword = _newPasswordController.text;
+    final String confirmNewPassword = _confirmNewPasswordController.text;
+
+    if (currentPassword.isEmpty || newPassword.isEmpty || confirmNewPassword.isEmpty) {
+      _showSnackBar('All password fields are required.', Colors.red);
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      _showSnackBar('New password must be at least 6 characters long.', Colors.red);
+      return;
+    }
+
+    if (newPassword != confirmNewPassword) {
+      _showSnackBar('New password and confirm password do not match.', Colors.red);
+      return;
+    }
+
+    // UPDATED URL: Pointing to the new backend endpoint for profile password reset
+    final url = Uri.parse('http://10.0.2.2:5000/api/profile/reset-password');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': formattedUserId, // Use the formattedUserId here
+          'current_password': currentPassword,
+          'new_password': newPassword,
+        }),
+      );
+
+      final responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        _showSnackBar('Password reset successfully!', Colors.green);
+        Navigator.of(context).pop(); // Close the dialog
+      } else {
+        _showSnackBar('Failed to reset password: ${responseData['error']}', Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar('An error occurred: $e', Colors.red);
+    }
+  }
+
 
   ListTile _buildLocationOption(IconData icon, String title) {
     return ListTile(
@@ -260,7 +389,6 @@ class _ProfilePageState extends State<ProfilePage> {
                   // Profile Header with Avatar
                   _buildProfileHeader(),
                   const SizedBox(height: 32),
-                  
                   // Personal Info Section
                   _buildSection(
                     title: "Personal Information",
@@ -288,10 +416,25 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 24),
+                      // Reset Password Button
+                      ElevatedButton(
+                        onPressed: _showResetPasswordDialog,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                        child: Text(
+                          'Reset Password',
+                          style: TextStyle(color: _cardColor, fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
-                  
                   // Health Section
                   _buildSection(
                     title: "Dietary & Health Details",
@@ -305,67 +448,57 @@ class _ProfilePageState extends State<ProfilePage> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  
                   // Fitness Goals Section
                   _buildSection(
                     title: "Fitness Goals",
                     icon: Icons.fitness_center_outlined,
                     children: [
-                      _buildEditableField('Goals', _fitnessGoalsController, hint: 'Lose 5kg, Build muscle, etc.', maxLines: 3),
+                      _buildEditableField('Your Fitness Goals', _fitnessGoalsController, hint: 'Lose weight, Gain muscle, etc.', maxLines: 2),
                     ],
                   ),
-                  const SizedBox(height: 32),
-
+                  const SizedBox(height: 24),
                   // Feedback Section
                   _buildSection(
-                    title: "Send Feedback",
+                    title: "Feedback",
                     icon: Icons.feedback_outlined,
                     children: [
                       _buildFeedbackCategoryDropdown(),
                       const SizedBox(height: 16),
                       _buildFeedbackTextField(),
-                      const SizedBox(height: 20),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton.icon(
-                          onPressed: _submitFeedback,
-                          icon: const Icon(Icons.send, color: Colors.white),
-                          label: const Text('SUBMIT FEEDBACK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryColor,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 3,
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: _submitFeedback,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                        child: Text(
+                          'Submit Feedback',
+                          style: TextStyle(color: _cardColor, fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
-                  
+                  const SizedBox(height: 40),
                   // Save Button
-                  if (_isEditing) ...[
+                  if (_isEditing)
                     ElevatedButton(
                       onPressed: _saveProfileData,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primaryColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        elevation: 4,
-                        shadowColor: _primaryColor.withOpacity(0.3),
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
                       ),
-                      child: const Text(
-                        'SAVE CHANGES',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      child: Text(
+                        'Save Changes',
+                        style: TextStyle(color: _cardColor, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                  ]
                 ],
               ),
             ),
@@ -375,79 +508,20 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildProfileHeader() {
     return Column(
       children: [
-        Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: _primaryColor, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.3),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                    offset: const Offset(0, 4),
-                  )
-                ],
-              ),
-              child: CircleAvatar(
-                radius: 60,
-                backgroundColor: _primaryColor.withOpacity(0.1),
-                child: ClipOval(
-                  child: Image.asset(
-                    'lib/assets/images/user_avatar.png',
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Icon(
-                      Icons.person,
-                      size: 50,
-                      color: _primaryColor,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (_isEditing)
-              Container(
-                decoration: BoxDecoration(
-                  color: _primaryColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: _cardColor, width: 2),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
-                  onPressed: () {
-                    // Add image picker functionality here
-                  },
-                ),
-              ),
-          ],
+        CircleAvatar(
+          radius: 60,
+          backgroundColor: _primaryColor.withOpacity(0.1),
+          child: Icon(Icons.person, size: 60, color: _primaryColor),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         Text(
           _usernameController.text,
           style: TextStyle(
+            color: _textColor,
             fontSize: 28,
             fontWeight: FontWeight.bold,
-            color: _textColor,
           ),
         ),
-        const SizedBox(height: 8),
-        if (_locationController.text.isNotEmpty)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
-              const SizedBox(width: 4),
-              Text(
-                _locationController.text,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
       ],
     );
   }
@@ -458,50 +532,44 @@ class _ProfilePageState extends State<ProfilePage> {
     required List<Widget> children,
   }) {
     return Container(
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardColor,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            spreadRadius: 2,
-            offset: const Offset(0, 4),
-          )
+            spreadRadius: 1,
+            blurRadius: 5,
+            offset: const Offset(0, 3),
+          ),
         ],
       ),
-      padding: const EdgeInsets.all(24),
-      margin: const EdgeInsets.only(bottom: 24), // Add margin bottom for spacing
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, color: _primaryColor, size: 24),
+              Icon(icon, color: _primaryColor, size: 28),
               const SizedBox(width: 12),
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
                   color: _textColor,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const Divider(height: 24, thickness: 1),
           ...children,
         ],
       ),
     );
   }
 
-  Widget _buildEditableField(
-    String label,
-    TextEditingController controller, {
-    String? hint,
-    int maxLines = 1,
-  }) {
+  Widget _buildEditableField(String label, TextEditingController controller, {String? hint, int maxLines = 1}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -515,14 +583,14 @@ class _ProfilePageState extends State<ProfilePage> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: _isEditing ? Colors.grey[50] : _backgroundColor,
+            color: _isEditing ? Colors.grey[50] : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: _isEditing ? _primaryColor.withOpacity(0.3) : Colors.transparent,
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
               controller: controller,
               enabled: _isEditing,
@@ -532,12 +600,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 hintText: hint,
                 hintStyle: TextStyle(color: Colors.grey[400]),
                 border: InputBorder.none,
-                suffixIcon: _isEditing
-                    ? IconButton(
-                        icon: Icon(Icons.clear, color: Colors.grey[400]),
-                        onPressed: () => controller.clear(),
-                      )
-                    : null,
               ),
             ),
           ),
@@ -546,7 +608,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // Special location field with interactive icon
   Widget _buildLocationField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -561,34 +622,24 @@ class _ProfilePageState extends State<ProfilePage> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: _isEditing ? Colors.grey[50] : _backgroundColor,
+            color: _isEditing ? Colors.grey[50] : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: _isEditing ? _primaryColor.withOpacity(0.3) : Colors.transparent,
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _locationController,
-                    enabled: _isEditing,
-                    style: TextStyle(color: _textColor, fontSize: 16),
-                    decoration: InputDecoration(
-                      hintText: 'City, Country',
-                      hintStyle: TextStyle(color: Colors.grey[400]),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-                if (_isEditing)
-                  IconButton(
-                    icon: Icon(Icons.location_on, color: _primaryColor),
-                    onPressed: _openLocationPicker,
-                  ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _locationController,
+              enabled: false, // Location is picked via dialog
+              style: TextStyle(color: _textColor, fontSize: 16),
+              decoration: InputDecoration(
+                hintText: 'Select your location',
+                hintStyle: TextStyle(color: Colors.grey[400]),
+                border: InputBorder.none,
+                suffixIcon: _isEditing ? Icon(Icons.arrow_drop_down, color: _primaryColor) : null,
+              ),
             ),
           ),
         ),
@@ -602,7 +653,7 @@ class _ProfilePageState extends State<ProfilePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Category',
+          'Feedback Category',
           style: TextStyle(
             color: _textColor.withOpacity(0.8),
             fontWeight: FontWeight.w500,
@@ -617,26 +668,30 @@ class _ProfilePageState extends State<ProfilePage> {
               color: _primaryColor.withOpacity(0.3),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: _selectedFeedbackCategory,
-              hint: Text('Select a category', style: TextStyle(color: Colors.grey[400])),
-              icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-              style: TextStyle(color: _textColor, fontSize: 16),
-              onChanged: (String? newValue) {
-                setState(() {
-                  _selectedFeedbackCategory = newValue;
-                });
-              },
-              items: <String>['Bug Report', 'Feature Request', 'General Feedback', 'Other']
-                  .map<DropdownMenuItem<String>>((String value) {
-                return DropdownMenuItem<String>(
-                  value: value,
-                  child: Text(value),
-                );
-              }).toList(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: _selectedFeedbackCategory,
+                hint: Text(
+                  'Select a category',
+                  style: TextStyle(color: Colors.grey[400]),
+                ),
+                icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedFeedbackCategory = newValue;
+                  });
+                },
+                items: <String>['General', 'Bug Report', 'Feature Request', 'Other']
+                    .map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+              ),
             ),
           ),
         ),

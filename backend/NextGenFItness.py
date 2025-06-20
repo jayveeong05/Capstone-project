@@ -358,6 +358,10 @@ def forgot_password():
 
 @app.route('/reset-password', methods=['POST'])
 def reset_password():
+    """
+    This endpoint is for generic password resets (e.g., from a 'forgot password' flow)
+    where the current password is NOT required.
+    """
     data = request.get_json()
     email = data.get('email')
     new_password = data.get('new_password')
@@ -369,11 +373,82 @@ def reset_password():
 
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
+        if c.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'User with provided email not found'}), 404
+        conn.commit()
+        return jsonify({'message': 'Password has been successfully updated'}), 200
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating password: {e}")
+        return jsonify({'error': 'Internal server error during password update'}), 500
+    finally:
+        conn.close()
 
-    return jsonify({'message': 'Password has been successfully updated'}), 200
+
+# NEW ENDPOINT: Reset password from profile page (requires current password verification)
+@app.route('/api/profile/reset-password', methods=['POST'])
+def profile_reset_password():
+    """
+    API endpoint for users to reset their password from the profile page.
+    Requires user_id, current_password, and new_password.
+    Verifies the current password before updating.
+    """
+    data = request.get_json()
+    user_id = data.get('user_id')
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    # Input validation
+    if not all([user_id, current_password, new_password]):
+        return jsonify({'error': 'Missing required fields: user_id, current_password, and new_password'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters long.'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Retrieve user's current hashed password from the database
+        cursor.execute("SELECT password FROM User WHERE user_id = ?", (user_id,))
+        user_row = cursor.fetchone()
+
+        if not user_row:
+            return jsonify({'error': 'User not found'}), 404
+
+        stored_hashed_password = user_row['password']
+
+        # Verify the provided current password against the stored hashed password
+        if not check_password_hash(stored_hashed_password, current_password):
+            return jsonify({'error': 'Invalid current password'}), 401
+
+        # Hash the new password
+        hashed_new_password = generate_password_hash(new_password)
+
+        # Update the password in the database
+        cursor.execute("UPDATE User SET password = ? WHERE user_id = ?", (hashed_new_password, user_id))
+        conn.commit()
+
+        return jsonify({'message': 'Password reset successfully!'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in profile_reset_password: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in profile_reset_password: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
 
 @app.route('/profile', methods=['POST'])
 def save_profile():
@@ -1734,4 +1809,3 @@ if __name__ == '__main__':
     print("  GET  /api/images/<filename> - Serve images")
     
     app.run(debug=True)
-
