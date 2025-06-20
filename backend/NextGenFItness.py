@@ -1098,7 +1098,57 @@ def get_total_users_count():
     finally:
         if conn:
             conn.close() # Ensure connection is closed
-            
+
+# --- NEW ENDPOINT TO COUNT PENDING FEEDBACKS ---
+@app.route('/api/feedbacks/pending/count', methods=['GET'])
+def get_pending_feedbacks_count():
+    """
+    API endpoint to get the count of feedbacks with status 'Pending'.
+    Returns:
+        JSON response with 'pending_feedbacks' count or an error message.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Feedback WHERE status = 'Pending'")
+        pending_feedbacks = cursor.fetchone()[0]
+        return jsonify({'pending_feedbacks': pending_feedbacks}), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_pending_feedbacks_count: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_pending_feedbacks_count: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# --- NEW ENDPOINT TO COUNT GENERATED REPORTS ---
+@app.route('/api/reports/count', methods=['GET'])
+def get_reports_count():
+    """
+    API endpoint to get the total count of reports generated.
+    Returns:
+        JSON response with 'reports_generated' count or an error message.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Report")
+        reports_generated = cursor.fetchone()[0]
+        return jsonify({'reports_generated': reports_generated}), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_reports_count: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_reports_count: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/api/users/<user_id>/role', methods=['PUT'])
 def update_user_role(user_id):
     """

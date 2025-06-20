@@ -20,8 +20,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   bool _isLoading = true;
   int _totalUsers = 0;
   int _activeUsers = 0;
-  int _pendingFeedbacks = 12;
-  int _reportsGenerated = 8;
+  int _pendingFeedbacks = 0;
+  int _reportsGenerated = 0;
 
   static const String _backendBaseUrl = 'http://10.0.2.2:5000';
 
@@ -52,6 +52,48 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Future<int> _fetchPendingFeedbacksFromDatabase() async {
+    final uri = Uri.parse('$_backendBaseUrl/api/feedbacks/pending/count');
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data.containsKey('pending_feedbacks') && data['pending_feedbacks'] is int) {
+          return data['pending_feedbacks'] as int;
+        } else {
+          throw const FormatException('Invalid or missing "pending_feedbacks" in API response.');
+        }
+      } else {
+        print('Failed to load pending feedbacks count: Status Code ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Failed to load pending feedbacks from API: Status ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Network error fetching pending feedbacks: $e');
+      throw Exception('Network error: $e. Please ensure the backend server is running and accessible.');
+    }
+  }
+
+  Future<int> _fetchReportsGeneratedFromDatabase() async {
+    final uri = Uri.parse('$_backendBaseUrl/api/reports/count');
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data.containsKey('reports_generated') && data['reports_generated'] is int) {
+          return data['reports_generated'] as int;
+        } else {
+          throw const FormatException('Invalid or missing "reports_generated" in API response.');
+        }
+      } else {
+        print('Failed to load reports generated count: Status Code ${response.statusCode}, Body: ${response.body}');
+        throw Exception('Failed to load reports generated from API: Status ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Network error fetching reports generated: $e');
+      throw Exception('Network error: $e. Please ensure the backend server is running and accessible.');
+    }
+  }
+
 Future<void> writeLog(String username, String action) async {
   try {
     final directory = await getApplicationDocumentsDirectory();
@@ -73,13 +115,17 @@ Future<void> writeLog(String username, String action) async {
   Future<void> _loadAdminData() async {
     try {
       final totalUsersCount = await _fetchTotalUsersFromDatabase();
+      final pendingFeedbacksCount = await _fetchPendingFeedbacksFromDatabase();
+      final reportsGeneratedCount = await _fetchReportsGeneratedFromDatabase();
       await Future.delayed(const Duration(milliseconds: 500));
       SharedPreferences prefs = await SharedPreferences.getInstance();
       if (mounted) {
         setState(() {
           _username = prefs.getString('username') ?? 'Admin';
           _totalUsers = totalUsersCount;
-          _activeUsers = 89;
+          _activeUsers = 1;
+          _pendingFeedbacks = pendingFeedbacksCount;
+          _reportsGenerated = reportsGeneratedCount;
           _isLoading = false;
         });
       }
