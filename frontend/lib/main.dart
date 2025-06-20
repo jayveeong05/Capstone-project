@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/admin_feedback_overview.dart';
+import 'package:frontend/pages/admin_registered_user_overview.dart';
+import 'package:frontend/pages/admin_user_activity_monitoring.dart';
 import 'package:frontend/pages/main_page.dart';
 import 'package:frontend/pages/onboard_page.dart';
 import 'pages/login_page.dart';
@@ -34,6 +37,9 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => SignUpPage(),
         '/mainpage': (context) => MainPage(),
         '/profile': (context) => ProfilePage(),
+        '/admin_registered_user_overview': (context) => AdminRegisteredUserOverview(),
+        '/admin_user_activity_monitoring': (context) => AdminUserActivityMonitoring(),
+        '/admin_feedback_overview': (context) => AdminFeedbackOverview(),
       },
     );
   }

@@ -22,11 +22,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
   bool _isLoading = true;
   bool _isEditing = false;
-  bool _showPassword = false;
+
 
   // Modern color scheme
   final Color _primaryColor = const Color(0xFF6C63FF);
-  final Color _secondaryColor = const Color(0xFF4A44B8);
   final Color _backgroundColor = const Color(0xFFF8F9FA);
   final Color _cardColor = Colors.white;
   final Color _textColor = const Color(0xFF2D3748);

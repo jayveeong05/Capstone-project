@@ -6,6 +6,7 @@ import base64
 import re # Import the re module for regeximport os
 import random
 import os
+import shutil
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
@@ -143,7 +144,23 @@ def signup():
 
     if not all([username, email, password_raw, gender, weight, height, age, main_goal, target_weight]):
         return jsonify({'error': 'Missing required fields for signup (username, email, password, gender, weight, height, age, goal, target_weight)'}), 400
+    
+    # Username length validation
+    if len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters long.'}), 400
 
+    # Username character validation: Allow only alphanumeric characters and underscores
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        return jsonify({'error': 'Username can only contain alphanumeric characters and underscores.'}), 400
+
+    # Username leading/trailing underscore validation
+    if username.startswith('') or username.endswith(''):
+        return jsonify({'error': 'Username cannot start or end with an underscore.'}), 400
+
+    # Username consecutive underscore validation
+    if '' in username:
+        return jsonify({'error': 'Username cannot contain consecutive underscores.'}), 400
+    
     # Email format validation
     # This regex covers most common email formats.
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -228,6 +245,8 @@ def login():
 
     if user and check_password_hash(user['password'], password):
         # Return role in the response
+        if user['role'] == 2: # Check if user role is 'banned'
+            return jsonify({'error': 'Your account has been disabled. Please contact support.'}), 403
         return jsonify({
             'message': 'Login successful',
             'user_id': user['user_id'],
@@ -235,6 +254,7 @@ def login():
         }), 200
     else:
         return jsonify({'error': 'Invalid username or password'}), 401
+
 
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
@@ -358,7 +378,6 @@ def search_exercises():
 
 @app.route('/exercises')
 def get_exercises():
-    import os
 
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 10))
@@ -597,6 +616,404 @@ def get_plan_week(plan_id, week_name):
 
     conn.close()
     return jsonify({'exercises': result})
+
+@app.route('/add-exercise', methods=['POST'])
+def add_exercise():
+    data = request.json
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO Exercise (name, level, mechanic, equipment, primaryMuscles, category, instructions)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (data['name'], data['level'], data['mechanic'], data['equipment'],
+          data['primaryMuscles'], data['category'], data['instructions']))
+    exercise_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Exercise added', 'id': exercise_id}), 200
+
+@app.route('/update-exercise/<int:exercise_id>', methods=['PUT'])
+def update_exercise(exercise_id):
+    data = request.json
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE Exercise SET name=?, level=?, mechanic=?, equipment=?, primaryMuscles=?, category=?, instructions=?
+        WHERE Exercise_ID=?
+    """, (data['name'], data['level'], data['mechanic'], data['equipment'],
+          data['primaryMuscles'], data['category'], data['instructions'], exercise_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Exercise updated'}), 200
+
+@app.route('/upload-exercise-images/<int:exercise_id>', methods=['POST'])
+def upload_exercise_images(exercise_id):
+    import os
+    from werkzeug.utils import secure_filename
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM Exercise WHERE Exercise_ID = ?", (exercise_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': 'Exercise not found'}), 404
+
+    exercise_name = row['name']
+    folder_name = exercise_name.replace('/', '_').replace(' ', '_')
+    save_dir = os.path.join(EXERCISE_FOLDER, folder_name)
+    os.makedirs(save_dir, exist_ok=True)
+
+    for i in range(2):
+        file = request.files.get(f'image{i}')
+        if file:
+            ext = file.filename.rsplit('.', 1)[1].lower()
+            if ext not in ['png', 'jpg', 'jpeg']:
+                return jsonify({'error': f'Invalid file type for image{i}'}), 400
+            file_path = os.path.join(save_dir, f"{i}.png")
+            file.save(file_path)
+
+    return jsonify({'message': 'Images uploaded successfully'}), 200
+
+@app.route('/delete-exercise/<int:exercise_id>', methods=['DELETE'])
+def delete_exercise(exercise_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get exercise name for deleting image folder
+    cur.execute("SELECT name FROM Exercise WHERE Exercise_ID = ?", (exercise_id,))
+    row = cur.fetchone()
+
+    if row is None:
+        conn.close()
+        return jsonify({'error': 'Exercise not found'}), 404
+
+    exercise_name = row['name']
+    folder_name = exercise_name.replace('/', '_').replace(' ', '_')
+    folder_path = os.path.join(EXERCISE_FOLDER, folder_name)
+
+    # Delete from DB
+    cur.execute("DELETE FROM Exercise WHERE Exercise_ID = ?", (exercise_id,))
+    conn.commit()
+    conn.close()
+
+    # Delete image folder if exists
+    if os.path.exists(folder_path):
+        shutil.rmtree(folder_path)
+
+    return jsonify({'message': f'Exercise {exercise_name} deleted successfully'}), 200
+
+# --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
+@app.route('/api/users', methods=['GET'])
+def get_all_users():
+    """
+    API endpoint to get all registered users with their profile information.
+    Joins User and Profile tables.
+    Returns:
+        JSON response with a list of user data or an error message.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Join User and Profile tables to get comprehensive user data
+        cursor.execute("""
+            SELECT
+                U.user_id,
+                U.username,
+                U.email,
+                U.role,
+                P.full_name,
+                P.age,
+                P.gender,
+                P.height,
+                P.weight,
+                P.bmi,
+                P.location,
+                P.profile_picture
+            FROM
+                User AS U
+            LEFT JOIN
+                Profile AS P ON U.user_id = P.user_id
+        """)
+        users_data = cursor.fetchall()
+
+        users_list = []
+        for user_row in users_data:
+            user_dict = dict(user_row)
+            # Convert role from integer to string ('Admin' or 'User')
+            user_dict['role'] = 'Admin' if user_dict['role'] == 0 else 'User'
+            users_list.append(user_dict)
+
+        return jsonify(users_list), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_all_users: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_all_users: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# --- NEW ENDPOINT TO GET TOTAL USERS COUNT ---
+@app.route('/api/users/count', methods=['GET'])
+def get_total_users_count():
+    """
+    API endpoint to get the total number of users from the 'User' table.
+    Expects a GET request.
+    Returns:
+        JSON response with 'total_users' count or an error message.
+    """
+    conn = None # Initialize conn to None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Execute the query to count rows in the 'User' table
+        cursor.execute("SELECT COUNT(*) FROM User")
+        total_users = cursor.fetchone()[0] # Fetch the count (first column of the first row)
+
+        # Return the count as a JSON response
+        return jsonify({'total_users': total_users}), 200 # 200 OK
+    except sqlite3.Error as e:
+        # Handle database errors
+        print(f"Database error in get_total_users_count: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500 # 500 Internal Server Error
+    except Exception as e:
+        # Handle other unexpected errors
+        print(f"An unexpected error occurred in get_total_users_count: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close() # Ensure connection is closed
+            
+@app.route('/api/users/<user_id>/role', methods=['PUT'])
+def update_user_role(user_id):
+    """
+    API endpoint to update a user's role.
+    Requires admin_user_id and new_role in the request body.
+    Prevents an admin from changing their own role.
+    """
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id') # In a real app, this comes from a session/JWT
+    new_role = data.get('new_role') # Expected: 0 (Admin), 1 (User), 2 (Banned)
+
+    if not admin_user_id or new_role is None or not isinstance(new_role, int):
+        return jsonify({'error': 'admin_user_id and a valid new_role (0, 1, or 2) are required'}), 400
+
+    if new_role not in [0, 1, 2]:
+        return jsonify({'error': 'Invalid role value. Must be 0 (Admin), 1 (User), or 2 (Banned).'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can change user roles.'}), 403
+
+        # 2. Prevent an admin from changing their own role
+        if user_id == admin_user_id:
+            return jsonify({'error': 'An administrator cannot change their own role.'}), 403
+
+        # 3. Check if the target user_id exists
+        cursor.execute("SELECT user_id FROM User WHERE user_id = ?", (user_id,))
+        target_user_exists = cursor.fetchone()
+        if not target_user_exists:
+            return jsonify({'error': 'User not found.'}), 404
+
+        # 4. Update the user's role
+        cursor.execute("UPDATE User SET role = ? WHERE user_id = ?", (new_role, user_id))
+        conn.commit()
+
+        return jsonify({'message': f'User {user_id} role updated to {new_role}'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in update_user_role: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in update_user_role: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/users/<user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    """
+    API endpoint to delete a user and all associated data.
+    Requires admin_user_id in the request body to authorize the action.
+    Prevents an admin from deleting another admin or themselves.
+    """
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id')
+
+    if not admin_user_id:
+        return jsonify({'error': 'admin_user_id is required for this operation.'}), 401 # Unauthorized
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can delete users.'}), 403
+
+        # 2. Prevent an admin from deleting themselves
+        if user_id == admin_user_id:
+            return jsonify({'error': 'An administrator cannot delete their own account.'}), 403
+
+        # 3. Check the role of the user to be deleted
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (user_id,))
+        user_to_delete_row = cursor.fetchone()
+        if not user_to_delete_row:
+            return jsonify({'error': 'User not found.'}), 404
+        
+        if user_to_delete_row['role'] == 0: # If the user to be deleted is an Admin
+            return jsonify({'error': 'Cannot delete another administrator account.'}), 403
+
+        # Start a transaction for atomicity
+        conn.execute("BEGIN TRANSACTION;")
+
+        # Tables with user_id as foreign key, ordered for dependency
+        tables_to_delete_from = [
+            "ChatbotInteraction", "Feedback", "FeedbackResponse", "Goal",
+            "MealScan", "Notification", "ProgressLog", "Report", "SystemLog", 
+            "UserDietPlan", "UserDietPreference", "WorkoutPlan", "VoiceLog", "Profile",
+            # RecipeLibrary does not seem to have a direct user_id FK, assuming it's managed differently
+            # Reminder might be associated, if so add it here
+        ]
+
+        for table in tables_to_delete_from:
+            try:
+                # Check if the table actually has a user_id column before attempting to delete
+                cursor.execute(f"PRAGMA table_info({table});")
+                columns = [col[1] for col in cursor.fetchall()]
+                if 'user_id' in columns:
+                    cursor.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+                    print(f"Deleted {cursor.rowcount} records from {table} for user {user_id}")
+                else:
+                    print(f"Table {table} does not have a user_id column. Skipping.")
+            except sqlite3.OperationalError as e:
+                print(f"Warning: Could not delete from {table}. Table might not exist or column missing: {e}")
+                # You might want to raise an error here if you expect all these tables to exist
+
+        # Finally, delete from the User table
+        cursor.execute("DELETE FROM User WHERE user_id = ?", (user_id,))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'User not found or already deleted.'}), 404
+
+        conn.commit()
+        return jsonify({'message': f'User {user_id} and all associated data deleted successfully.'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in delete_user: {e}")
+        if conn:
+            conn.rollback() # Rollback on error
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in delete_user: {e}")
+        if conn:
+            conn.rollback() # Rollback on unexpected error
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/systemlogs', methods=['GET'])
+def get_system_logs():
+    """
+    API endpoint to retrieve all entries from the SystemLog table.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Fetch all logs, ordered by timestamp descending for most recent first
+        cursor.execute("SELECT log_id, user_id, action, timestamp FROM SystemLog ORDER BY timestamp DESC")
+        logs = cursor.fetchall()
+
+        log_list = []
+        for log in logs:
+            log_list.append({
+                'log_entry_id': log['log_id'],
+                'user_id': log['user_id'],
+                'action': log['action'],
+                'timestamp': log['timestamp']
+            })
+        return jsonify(log_list), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_system_logs: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_system_logs: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# NEW: API endpoint to get all feedback
+@app.route('/api/feedback', methods=['GET'])
+def get_all_feedback():
+    """
+    API endpoint to retrieve all feedback entries from the Feedback table.
+    Can accept 'status' and 'category' query parameters for filtering.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        status_filter = request.args.get('status')
+        category_filter = request.args.get('category')
+
+        query = "SELECT feedback_id, user_id, submitted_at, category, feedback_text, status FROM Feedback WHERE 1=1"
+        params = []
+
+        if status_filter:
+            query += " AND status = ?"
+            params.append(status_filter)
+        if category_filter:
+            query += " AND category = ?"
+            params.append(category_filter)
+
+        query += " ORDER BY submitted_at DESC, feedback_id DESC" # Order by most recent first
+
+        cursor.execute(query, params)
+        feedbacks = cursor.fetchall()
+
+        feedback_list = []
+        for fb in feedbacks:
+            feedback_list.append({
+                'feedback_id': fb['feedback_id'],
+                'user_id': fb['user_id'],
+                'submitted_at': fb['submitted_at'],
+                'category': fb['category'],
+                'feedback_text': fb['feedback_text'],
+                'status': fb['status']
+            })
+        return jsonify(feedback_list), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_all_feedback: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_all_feedback: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
     init_db()

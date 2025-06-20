@@ -28,12 +28,13 @@ class _MainPageState extends State<MainPage> {
   }
 
   // Function to handle logout
-  Future<void> _logout() async {
+    Future<void> _logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
     // Ensure you have a login route defined in your MaterialApp
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
+
 
   // Helper widget to build a standardized section card
   Widget _buildSectionCard({required Widget child, Color? color, double elevation = 4}) {
@@ -179,7 +180,55 @@ class _MainPageState extends State<MainPage> {
       ),
     );
   }
+void _showNotifications(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) {
+      // Dummy list of notifications (you can replace with real data)
+      final List<String> notifications = [
+        'Don’t forget your workout today!',
+        'New workout plan available.',
+        'Check your progress in the Profile section.',
+      ];
 
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 50,
+                height: 4,
+                margin: EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Notifications',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ...notifications.map((note) => ListTile(
+              leading: Icon(Icons.notification_important_outlined, color: Colors.blueAccent),
+              title: Text(note),
+              onTap: () {
+                Navigator.pop(context); // Close after tap
+              },
+            )),
+          ],
+        ),
+      );
+    },
+  );
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -198,6 +247,10 @@ class _MainPageState extends State<MainPage> {
         ),
         actions: [
           // Profile Avatar/Button (can be tapped to go to profile settings)
+          IconButton(
+            icon: Icon(Icons.notifications_none, color: Colors.black87),
+            onPressed: () => _showNotifications(context),
+          ),
           GestureDetector(
             onTap: () {
               Navigator.of(context).pushNamed('/profile'); // Navigate to Profile Page

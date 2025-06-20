@@ -396,7 +396,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                     ),
                                     InkWell(
                                       onTap: () {
-                                        Navigator.pushReplacementNamed(
+                                        Navigator.pushNamed(
                                           context, 
                                           '/signup'
                                         );
