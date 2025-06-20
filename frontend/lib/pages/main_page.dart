@@ -5,7 +5,8 @@ import 'all_workoutplan_page.dart';
 import 'MealPlansPage.dart';
 import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
-
+import 'package:http/http.dart'as http;
+import 'dart:convert';
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
@@ -182,49 +183,80 @@ class _MainPageState extends State<MainPage> {
       ),
     );
   }
-void _showNotifications(BuildContext context) {
+
+void _showNotifications(BuildContext context) async {
+  final prefs = await SharedPreferences.getInstance();
+  final today = DateTime.now();
+  final todayStr = "${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
+
+  // 🚫 Check if today's reminder was already confirmed
+  final lastChecked = prefs.getString('last_checked_reminder');
+  if (lastChecked == todayStr) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("✅ All workouts completed! No pending exercises."),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+  }
+
+  final userId = prefs.getInt('user_id');
+  if (userId == null) return;
+
+  final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+
+  // 1. Get user's workout plans
+  final planResponse = await http.get(Uri.parse('http://10.0.2.2:5000/get-plans/$formattedUserId'));
+  if (planResponse.statusCode != 200) return;
+
+  final plans = json.decode(planResponse.body)['plans'];
+  if (plans.isEmpty) return;
+
+  final int latestPlanId = plans.last['plan_id'];
+
+  // 2. Check if there's a workout for today
+  final workoutResponse = await http.get(Uri.parse(
+    'http://10.0.2.2:5000/get-plan-date/$latestPlanId/$todayStr'
+  ));
+
+  if (workoutResponse.statusCode != 200) return;
+  final exercises = json.decode(workoutResponse.body)['exercises'];
+  if (exercises.isEmpty) return;
+
+  // ✅ 3. Show notification
   showModalBottomSheet(
     context: context,
-    shape: RoundedRectangleBorder(
+    shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) {
-      // Dummy list of notifications (you can replace with real data)
-      final List<String> notifications = [
-        'Don’t forget your workout today!',
-        'New workout plan available.',
-        'Check your progress in the Profile section.',
-      ];
-
       return Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 50,
-                height: 4,
-                margin: EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Text(
-              'Notifications',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            const Text(
+              'Today\'s Workout Reminder 💪',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            ...notifications.map((note) => ListTile(
-              leading: Icon(Icons.notification_important_outlined, color: Colors.blueAccent),
-              title: Text(note),
-              onTap: () {
-                Navigator.pop(context); // Close after tap
+            ...exercises.map((ex) => Text('• ${ex['name']}')),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                // ✅ Save that user checked today's reminder
+                List<String> doneDates = prefs.getStringList('checked_reminder_dates') ?? [];
+                if (!doneDates.contains(todayStr)) {
+                  doneDates.add(todayStr);
+                  prefs.setStringList('checked_reminder_dates', doneDates);
+                }
+
+                Navigator.pop(context);
               },
-            )),
+              icon: const Icon(Icons.check),
+              label: const Text("Done"),
+            ),
           ],
         ),
       );

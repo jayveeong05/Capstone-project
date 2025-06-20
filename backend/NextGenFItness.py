@@ -19,8 +19,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
 IMAGE_DIR = EXERCISE_FOLDER
 
-
-
 GOOGLE_API_KEY= 'AIzaSyD5Ilz_JtzhJW_aZup7xBFZs9cOzyW_G6M'
 genai.configure(api_key=GOOGLE_API_KEY)
 
@@ -293,7 +291,6 @@ def signup():
     finally:
         conn.close()
 
-
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -318,7 +315,6 @@ def login():
         }), 200
     else:
         return jsonify({'error': 'Invalid username or password'}), 401
-
 
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
@@ -506,6 +502,68 @@ def get_exercises():
 
     return jsonify({'exercises': exercises})
 
+@app.route('/exercise-library', methods=['GET'])
+def get_exercise_library():
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    offset = (page - 1) * per_page
+
+    # Filters
+    level = request.args.get('level')
+    mechanic = request.args.get('mechanic')
+    equipment = request.args.get('equipment')
+    primary_muscle = request.args.get('primaryMuscle')
+    category = request.args.get('category')
+
+    query = "SELECT * FROM Exercise WHERE 1=1"
+    params = []
+
+    if level:
+        query += " AND level = ?"
+        params.append(level)
+    if mechanic:
+        query += " AND mechanic = ?"
+        params.append(mechanic)
+    if equipment:
+        query += " AND equipment = ?"
+        params.append(equipment)
+    if primary_muscle:
+        query += " AND primaryMuscles LIKE ?"
+        params.append(f"%{primary_muscle}%")
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+
+    query += " LIMIT ? OFFSET ?"
+    params.extend([per_page, offset])
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    exercises = []
+    for row in rows:
+        ex = dict(row)
+        folder_name = ex['name'].replace('/', '_').replace(' ', '_')
+        image_dir = os.path.join(EXERCISE_FOLDER, folder_name)
+        image_urls = []
+
+        if os.path.exists(image_dir):
+            for filename in sorted(os.listdir(image_dir)):
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    image_urls.append(f'/exercise-images/{folder_name}/{filename}')
+        ex['image_urls'] = image_urls
+
+        # Convert instructions to list
+        if isinstance(ex['instructions'], str):
+            ex['instructions'] = [s.strip() for s in ex['instructions'].split('.') if s.strip()]
+
+        exercises.append(ex)
+
+    return jsonify({'exercises': exercises})
+
 @app.route('/generate-plan', methods=['POST'])
 def generate_workout_plan():
     data = request.get_json()
@@ -517,14 +575,14 @@ def generate_workout_plan():
     primaryMuscle = data.get('primaryMuscle')
     category = data.get('category')
     duration_months = data.get('duration', 3)
+    start_date_str = data.get('start_date')  # optional: e.g. "2025-06-21"
 
     if user_id.isdigit():
-        user_id = f"U{int(user_id):03d}"  # pad to 3 digits with U prefix
+        user_id = f"U{int(user_id):03d}"
 
     if not user_id:
         return jsonify({'error': 'user_id is required'}), 400
 
-    # Build dynamic query
     query = "SELECT * FROM Exercise WHERE 1=1"
     params = []
 
@@ -556,42 +614,51 @@ def generate_workout_plan():
     exercises = [dict(row) for row in rows]
     random.shuffle(exercises)
 
-    total_days = duration_months * 4 * 3
-    plan = exercises[:total_days]
+    total_days = duration_months * 4 * 3  # 3 days per week for 4 weeks/month
+    plan = []
+    while len(plan) < total_days:
+        plan.extend(exercises)
 
-    # Group into weeks/days
-    plan_by_weeks = {}
-    for i in range(0, len(plan), 3):
-        week = i // 3 + 1
-        plan_by_weeks.setdefault(f'Week {week}', []).extend(plan[i:i + 3])
+    plan = plan[:total_days] 
 
-    # Insert into WorkoutPlan with plan_data
+    # Set the start date
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({'error': 'Invalid start_date format. Use YYYY-MM-DD'}), 400
+    else:
+        start_date = datetime.today()
+
+    # Insert into WorkoutPlan
     cur.execute(
         "INSERT INTO WorkoutPlan (user_id, duration_months) VALUES (?, ?)",
         (user_id, duration_months)
     )
     plan_id = cur.lastrowid
 
-    # Insert into WorkoutPlanExercise
-    for week_str, exercises_in_week in plan_by_weeks.items():
-        week_number = int(week_str.split()[1])
-        day_number = 1
-        for ex in exercises_in_week:
-            cur.execute('''
-                INSERT INTO WorkoutPlanExercise (plan_id, exercise_id, week_number, day_number)
-                VALUES (?, ?, ?, ?)
-            ''', (plan_id, ex['Exercise_ID'], week_number, day_number))
-            day_number += 1
+    # Insert into WorkoutPlanExercise with actual dates
+    plan_by_dates = {}
+    for i, ex in enumerate(plan):
+        exercise_date = start_date + timedelta(days=i)
+        formatted_date = exercise_date.strftime("%Y-%m-%d")
 
-    print("Generated plan_id:", plan_id)
+        cur.execute('''
+            INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
+            VALUES (?, ?, ?)
+        ''', (plan_id, ex['Exercise_ID'], formatted_date))
+
+        plan_by_dates[formatted_date] = plan_by_dates.get(formatted_date, []) + [ex]
+
     conn.commit()
     conn.close()
 
     return jsonify({
-        'message': 'Workout plan generated and saved',
+        'message': 'Workout plan generated and saved with dates',
         'plan_id': plan_id,
-        'plan': plan_by_weeks
+        'plan': plan_by_dates
     })
+
 @app.route('/get-plans/<user_id>', methods=['GET'])
 def get_plans(user_id):
     conn = get_db_connection()
@@ -603,69 +670,49 @@ def get_plans(user_id):
 
     return jsonify({'plans': [dict(plan) for plan in plans]})
 
-@app.route('/get-plan/<int:plan_id>')
-def get_weeks(plan_id):
+@app.route('/get-plan-dates/<int:plan_id>', methods=['GET'])
+def get_plan_dates(plan_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT DISTINCT week_number FROM WorkoutPlanExercise
-        WHERE plan_id = ?
-        ORDER BY week_number
-    ''', (plan_id,))
-    
-    weeks = cursor.fetchall()
-    conn.close()
-
-    week_names = [f"Week {row['week_number']}" for row in weeks]
-    return jsonify({'weeks': week_names})
-
-@app.route('/get-plan-weeks/<int:plan_id>', methods=['GET'])
-def get_plan_weeks(plan_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT DISTINCT week_number
+        SELECT DISTINCT date
         FROM WorkoutPlanExercise
         WHERE plan_id = ?
-        ORDER BY week_number
+        ORDER BY date
     ''', (plan_id,))
     
-    weeks = cursor.fetchall()
+    dates = cursor.fetchall()
     conn.close()
 
-    # Convert to "Week 1", "Week 2", ...
-    week_list = [f"Week {row['week_number']}" for row in weeks]
-    return jsonify({'weeks': week_list})
+    # Convert to readable format (optional: e.g. "2025-06-21 (Saturday)")
+    date_list = [row['date'] for row in dates]
+    return jsonify({'dates': date_list})
 
-@app.route('/get-plan-week/<int:plan_id>/<string:week_name>', methods=['GET'])
-def get_plan_week(plan_id, week_name):
+@app.route('/get-plan-date/<int:plan_id>/<string:date_str>', methods=['GET'])
+def get_plan_date(plan_id, date_str):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Extract week number from "Week 1"
+    # Validate date format
     try:
-        week_number = int(week_name.replace("Week ", ""))
+        datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
-        return jsonify({"error": "Invalid week format"}), 400
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
 
     cursor.execute('''
-        SELECT w.exercise_id, w.week_number, w.day_number, e.*
+        SELECT w.Workout_id, w.exercise_id, w.date, e.*
         FROM WorkoutPlanExercise w
         JOIN Exercise e ON w.exercise_id = e.Exercise_ID
-        WHERE w.plan_id = ? AND w.week_number = ?
-        ORDER BY w.day_number
-    ''', (plan_id, week_number))
+        WHERE w.plan_id = ? AND w.date = ?
+    ''', (plan_id, date_str))
 
     exercises = cursor.fetchall()
     result = []
     for ex in exercises:
         exercise_dict = dict(ex)
-        # Decode instructions
         exercise_dict['instructions'] = [s.strip() for s in exercise_dict['instructions'].split('.') if s.strip()]
-        
-        # Handle image URLs
+
         folder = exercise_dict['name'].replace('/', '_').replace(' ', '_')
         image_dir = os.path.join(EXERCISE_FOLDER, folder)
         if os.path.exists(image_dir):
@@ -696,6 +743,59 @@ def add_exercise():
     conn.close()
     return jsonify({'message': 'Exercise added', 'id': exercise_id}), 200
 
+#update exercise in plan
+@app.route('/update-exercise-plan', methods=['POST'])
+def update_exercise_plan():
+    data = request.get_json()
+    workout_id = data.get('workout_id')
+    new_exercise_id = data.get('exercise_id') or data.get('new_exercise_id')
+    new_date = data.get('date')  # Optional
+
+    if not workout_id or not new_exercise_id:
+        print("Incoming data:", data)
+        return jsonify({'error': 'Missing workout_id or exercise_id'}), 400
+        
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Build the update query
+    if new_date:
+        cur.execute('''
+            UPDATE WorkoutPlanExercise
+            SET exercise_id = ?, date = ?
+            WHERE Workout_id = ?
+        ''', (new_exercise_id, new_date, workout_id))
+    else:
+        cur.execute('''
+            UPDATE WorkoutPlanExercise
+            SET exercise_id = ?
+            WHERE Workout_id = ?
+        ''', (new_exercise_id, workout_id))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Workout updated successfully'})
+
+#delete exercise in plan
+@app.route('/delete-exercise-plan', methods=['POST'])
+def delete_exercise_plan():
+    data = request.get_json()
+    workout_id = data.get('workout_id')
+
+    if not workout_id:
+        return jsonify({'error': 'Missing workout_id'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute('DELETE FROM WorkoutPlanExercise WHERE Workout_id = ?', (workout_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Workout entry deleted successfully'})
+
+#update exercise library
 @app.route('/update-exercise/<int:exercise_id>', methods=['PUT'])
 def update_exercise(exercise_id):
     data = request.json
@@ -768,6 +868,52 @@ def delete_exercise(exercise_id):
 
     return jsonify({'message': f'Exercise {exercise_name} deleted successfully'}), 200
 
+#save custom plan
+@app.route('/save-custom-plan', methods=['POST'])
+def save_custom_plan():
+    data = request.get_json()
+
+    user_id = data.get('user_id')
+    exercise_ids = data.get('exercise_ids', [])
+    duration = data.get('duration', 3)  # default to 3 months if not provided
+
+    if not user_id or not exercise_ids:
+        return jsonify({"error": "Missing user_id or exercise_ids"}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Insert new workout plan
+        cursor.execute('''
+            INSERT INTO WorkoutPlan (user_id, duration_months, created_at)
+            VALUES (?, ?, ?)
+        ''', (user_id, duration, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+
+        plan_id = cursor.lastrowid
+
+        # Generate dates for exercises
+        total_days = duration * 30
+        start_date = datetime.now().date()
+        for i, exercise_id in enumerate(exercise_ids):
+            day_offset = i % total_days
+            target_date = start_date + timedelta(days=day_offset)
+
+            cursor.execute('''
+                INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
+                VALUES (?, ?, ?)
+            ''', (plan_id, exercise_id, target_date.strftime('%Y-%m-%d')))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True, "plan_id": plan_id})
+
+    except Exception as e:
+        print("❌ Error:", e)
+        return jsonify({"error": str(e)}), 500
+    
 # --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
 @app.route('/api/users', methods=['GET'])
 def get_all_users():
@@ -1125,7 +1271,6 @@ def suggest_meals():
     suggested_meals.sort(key=lambda x: x['match_percentage'], reverse=True)
     conn.close()
     return jsonify({'meals': suggested_meals})
-
 
 @app.route('/meal-scan', methods=['POST'])
 def meal_scan():

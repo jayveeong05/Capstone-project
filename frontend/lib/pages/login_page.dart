@@ -5,7 +5,6 @@ import 'package:frontend/pages/admin_main_page.dart';
 import 'package:frontend/pages/main_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter/animation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
 
