@@ -71,7 +71,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('./backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -808,9 +808,9 @@ def scan_meal():
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('''
-            INSERT INTO MealScans (meal_scan_id, user_id, food_name, calories, nutrients, image_path)
+            INSERT INTO MealScan (meal_scan_id, user_id, image_path, food_name, calories, nutrients)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (meal_scan_id, user_id, food_name, calories, json.dumps(nutrients), file_path))
+        ''', (meal_scan_id, user_id, file_path, food_name, calories, json.dumps(nutrients)))
         conn.commit()
         conn.close()
         

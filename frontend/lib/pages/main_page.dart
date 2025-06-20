@@ -183,6 +183,12 @@ class _MainPageState extends State<MainPage> {
     );
   }
 
+  Future<String?> _getUserId() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    // Adjust the key if you store user_id as int or string
+    return prefs.getString('user_id') ?? prefs.getInt('user_id')?.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -295,13 +301,19 @@ class _MainPageState extends State<MainPage> {
                     // TODO: Activate Voice Logging
                     print('Activate Voice Log');
                   }),
-                  _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () {
-                    // TODO: Open Meal Scanner
-                    // print('Open Meal Scanner');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MealScannerScreen(userId: 'user123')), // TODO: Replace with actual user ID
-                    );
+                  _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () async {
+                    String? userId = await _getUserId();
+                    if (userId != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => MealScannerScreen(userId: userId)),
+                      );
+                    } else {
+                      // Handle missing user ID (e.g., show error or redirect to login)
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('User not found. Please log in again.')),
+                      );
+                    }
                   }),
                   _buildQuickActionButton(Icons.add_task, 'Set Goals', () {
                     // TODO: Navigate to Goal Setting Page (or a modal)
@@ -372,11 +384,7 @@ class _MainPageState extends State<MainPage> {
                       Icons.restaurant_menu, 'Meal Plans', Colors.teal,
                       () {
                     // TODO: Navigate to Meal Plan Page
-                    // print('Navigate to Meal Plan');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MealPlansPage()),
-                    );
+                    print('Navigate to Meal Plan');
                   }),
                   _buildUtilityCard(
                       Icons.video_library, 'Exercise Library', Colors.redAccent,
@@ -391,15 +399,26 @@ class _MainPageState extends State<MainPage> {
                       () {
                     // TODO: Navigate to Meal Library
                     print('Navigate to Meal Library');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MealPlansPage()),
+                    );
                   }),
                   _buildUtilityCard(
-                      Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () {
-                    // TODO: Open Chatbot
-                    //print('Open Chatbot');
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (context) => ChatbotPage(userId: 'user123'),
-                    ));
-                  }),
+                      Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () async {
+                        String? userId = await _getUserId();
+                        if (userId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => ChatbotPage(userId: userId)),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('User not found. Please log in again.')),
+                          );
+                        }
+                      }
+                  ),
                   _buildUtilityCard(
                       Icons.gps_fixed, 'Grocery Locator', Colors.blueGrey, () {
                     // TODO: Navigate to Grocery Shop Locator
