@@ -7,6 +7,10 @@ import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
 import 'package:http/http.dart'as http;
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
+
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
@@ -31,13 +35,64 @@ class _MainPageState extends State<MainPage> {
     });
   }
 
-  // // Function to handle logout
-  //   Future<void> _logout() async {
-  //   SharedPreferences prefs = await SharedPreferences.getInstance();
-  //   await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
-  //   // Ensure you have a login route defined in your MaterialApp
-  //   Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-  // }
+Future<void> writeLog(String username, String action) async {
+  try {
+    final directory = await getApplicationDocumentsDirectory();
+    final filePath = '${directory.path}/activity_log.txt';
+    final file = File(filePath);
+
+    final now = DateTime.now();
+    final formattedTime = DateFormat('HH:mm:ss dd/MM/yyyy').format(now);
+    final logLine = '-- $username has been $action at $formattedTime\n';
+
+    await file.writeAsString(logLine, mode: FileMode.append); // Append to the file
+    print('✅ Log written: $logLine');
+    print('Log file stored at: ${file.path}');
+  } catch (e) {
+    print('❌ Failed to write log: $e');
+  }
+}
+
+Future<void> _logout() async {
+  final confirm = await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text("Logout"),
+      content: Text("Are you sure you want to logout?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text("Logout", style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm == true) {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('username') ?? 'User';
+    await writeLog(username, 'logged out');
+
+    // Show SnackBar before navigating away
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("✅ Logged out successfully"),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    // Delay a bit so SnackBar is visible
+    await Future.delayed(Duration(seconds: 1));
+
+    // Navigate to main.dart or login screen
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+}
 
   // Helper widget to build a standardized section card
   Widget _buildSectionCard({required Widget child, Color? color, double elevation = 4}) {
@@ -263,24 +318,28 @@ void _showNotifications(BuildContext context) async {
     },
   );
 }
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50], // Light background for modern feel
-      appBar: AppBar(
-        backgroundColor: Colors.grey[50],
-        elevation: 0,
-        title: Text(
-          'Welcome, $_username! 👋', // Display personalized username
-          style: const TextStyle(
-            color: Colors.black87,
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-            fontFamily: 'Inter', // Assuming Inter font is available or set globally
+          @override
+          Widget build(BuildContext context) {
+            return Scaffold(
+              backgroundColor: Colors.grey[50], // Light background for modern feel
+              appBar: AppBar(
+                backgroundColor: Colors.grey[50],
+                elevation: 0,
+                title: Text(
+                  'Welcome, $_username! 👋', // Display personalized username
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    fontFamily: 'Inter', // Assuming Inter font is available or set globally
+                  ),
+                ),
+                actions: [
+          IconButton(
+            icon: Icon(Icons.logout, color: Colors.redAccent),
+            tooltip: 'Logout',
+            onPressed: _logout,
           ),
-        ),
-        actions: [
-          // Profile Avatar/Button (can be tapped to go to profile settings)
           IconButton(
             icon: Icon(Icons.notifications_none, color: Colors.black87),
             onPressed: () => _showNotifications(context),
@@ -294,17 +353,10 @@ void _showNotifications(BuildContext context) async {
               child: CircleAvatar(
                 radius: 20,
                 backgroundColor: Colors.blueAccent.withOpacity(0.1),
-                // Using a placeholder image for now, replace with actual user_avatar.png
-                // Make sure 'lib/assets/images/user_avatar.png' exists
-                // or use a different Asset, NetworkImage, or Icon as fallback
                 child: Image.asset(
                   'lib/assets/images/user_avatar.png',
                   errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.person,
-                      color: Colors.blueAccent,
-                      size: 28,
-                    );
+                    return const Icon(Icons.person, color: Colors.blueAccent, size: 28);
                   },
                 ),
               ),

@@ -216,11 +216,11 @@ def signup():
         return jsonify({'error': 'Username can only contain alphanumeric characters and underscores.'}), 400
 
     # Username leading/trailing underscore validation
-    if username.startswith('') or username.endswith(''):
+    if username.startswith('_') or username.endswith('_'):
         return jsonify({'error': 'Username cannot start or end with an underscore.'}), 400
 
     # Username consecutive underscore validation
-    if '' in username:
+    if '_' in username:
         return jsonify({'error': 'Username cannot contain consecutive underscores.'}), 400
     
     # Email format validation
@@ -502,6 +502,7 @@ def get_exercises():
 
     return jsonify({'exercises': exercises})
 
+#customize-exercise-libray
 @app.route('/exercise-library', methods=['GET'])
 def get_exercise_library():
     page = int(request.args.get('page', 1))

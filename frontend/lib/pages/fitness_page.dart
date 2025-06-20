@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class FitnessPage extends StatefulWidget {
   @override
@@ -232,14 +233,13 @@ class _FitnessPageState extends State<FitnessPage> {
                                     children: (ex['image_urls'] as List<dynamic>).map((url) {
                                       return Padding(
                                         padding: EdgeInsets.only(right: 10),
-                                        child: Image.network(
-                                          'http://10.0.2.2:5000$url',
+                                        child: CachedNetworkImage(
+                                          imageUrl: 'http://10.0.2.2:5000$url',
                                           height: 100,
                                           width: 100,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Icon(Icons.broken_image, size: 100);
-                                          },
+                                          placeholder: (context, url) => Center(child: CircularProgressIndicator()),
+                                          errorWidget: (context, url, error) => Icon(Icons.broken_image, size: 100),
                                         ),
                                       );
                                     }).toList(),
@@ -248,11 +248,11 @@ class _FitnessPageState extends State<FitnessPage> {
                               else
                                 Text("No image available"),
                               SizedBox(height: 8),
-                            Text('Instructions:', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ...((ex['instructions'] as List<dynamic>?)?.map((step) {
-                              final cleaned = step.toString().replaceAll(RegExp(r'[\[\]\"]'), '').trim();
-                              return Text('• $cleaned');
-                            }) ?? [Text("No instructions available")]),
+                              Text('Instructions:', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ...((ex['instructions'] as List<dynamic>?)?.map((step) {
+                                final cleaned = step.toString().replaceAll(RegExp(r'[\[\]"]'), '').trim();
+                                return Text('• $cleaned');
+                              }) ?? [Text("No instructions available")]),
                             ],
                           ),
                         ),

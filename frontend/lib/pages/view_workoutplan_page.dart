@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import 'exercise_selector_page.dart';
 
 class ViewWorkoutPlanPage extends StatefulWidget {
   final int planId;
-  ViewWorkoutPlanPage({required this.planId});
+
+  const ViewWorkoutPlanPage({required this.planId});
 
   @override
-  _ViewWorkoutPlanPageState createState() => _ViewWorkoutPlanPageState();
+  State<ViewWorkoutPlanPage> createState() => _ViewWorkoutPlanPageState();
 }
 
 class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
-  List<String> dates = []; // e.g., ['2025-06-21']
+  List<String> dates = [];
   String? selectedDate;
   List<dynamic> exercises = [];
 
@@ -28,7 +31,7 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
       Uri.parse('http://10.0.2.2:5000/get-plan-dates/${widget.planId}'),
     );
     if (response.statusCode == 200) {
-      final Map<String, dynamic> data = json.decode(response.body);
+      final data = json.decode(response.body);
       setState(() {
         dates = List<String>.from(data['dates']);
         selectedDate = dates.isNotEmpty ? dates[0] : null;
@@ -53,21 +56,19 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
   }
 
   Future<void> deleteWorkout(int workoutId) async {
-  final response = await http.post(
-    Uri.parse('http://10.0.2.2:5000/delete-exercise-plan'),
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({'workout_id': workoutId}),
-  );
+    final response = await http.post(
+      Uri.parse('http://10.0.2.2:5000/delete-exercise-plan'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'workout_id': workoutId}),
+    );
 
-  if (response.statusCode == 200) {
-    print('✅ Deleted successfully');
-    // Optionally: refresh exercises list
-    fetchExercisesByDate(selectedDate!);
-  } else {
-    print('❌ Failed to delete: ${response.body}');
+    if (response.statusCode == 200) {
+      print('✅ Deleted successfully');
+      fetchExercisesByDate(selectedDate!);
+    } else {
+      print('❌ Failed to delete: ${response.body}');
+    }
   }
-}
-
 
   String formatDate(String dateStr) {
     try {
@@ -77,38 +78,44 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
       return dateStr;
     }
   }
+
   Widget buildExerciseCard(dynamic ex) {
+    final imageUrls = (ex['image_urls'] as List<dynamic>).take(3).toList();
     return Card(
-      margin: const EdgeInsets.all(8),
+      margin: const EdgeInsets.all(10),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              ex['name'],
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
+            Text(ex['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
             Text('Level: ${ex['level']}'),
             Text('Category: ${ex['category']}'),
             Text('Equipment: ${ex['equipment']}'),
             const SizedBox(height: 8),
-            if (ex['image_urls'] != null && ex['image_urls'].isNotEmpty)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: (ex['image_urls'] as List<dynamic>).map((url) {
+            if (imageUrls.isNotEmpty)
+              SizedBox(
+                height: 110,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: imageUrls.length,
+                  itemBuilder: (context, index) {
+                    final url = imageUrls[index];
                     return Padding(
                       padding: const EdgeInsets.only(right: 10),
-                      child: Image.network(
-                        'http://10.0.2.2:5000$url',
-                        height: 100,
+                      child: CachedNetworkImage(
+                        imageUrl: 'http://10.0.2.2:5000$url',
                         width: 100,
+                        height: 100,
                         fit: BoxFit.cover,
+                        placeholder: (context, url) => CircularProgressIndicator(),
+                        errorWidget: (context, url, error) => Icon(Icons.broken_image),
                       ),
                     );
-                  }).toList(),
+                  },
                 ),
               )
             else
@@ -121,14 +128,14 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
-                  icon: Icon(Icons.edit, color: Colors.blue),
-                  label: Text("Edit"),
+                  icon: const Icon(Icons.edit, color: Colors.blue),
+                  label: const Text("Edit"),
                   onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => ExerciseSelectorPage(
-                          workoutId: ex['workout_id'],
+                          workoutId: ex['Workout_id'],
                           currentExerciseId: ex['Exercise_ID'],
                         ),
                       ),
@@ -136,17 +143,17 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
                   },
                 ),
                 TextButton.icon(
-                  icon: Icon(Icons.delete, color: Colors.red),
-                  label: Text("Delete"),
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  label: const Text("Delete"),
                   onPressed: () async {
                     final confirm = await showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: Text("Confirm Delete"),
-                        content: Text("Are you sure you want to delete this workout?"),
+                        title: const Text("Confirm Delete"),
+                        content: const Text("Are you sure you want to delete this workout?"),
                         actions: [
-                          TextButton(onPressed: () => Navigator.pop(context, false), child: Text("Cancel")),
-                          TextButton(onPressed: () => Navigator.pop(context, true), child: Text("Delete")),
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+                          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete")),
                         ],
                       ),
                     );
@@ -162,7 +169,6 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
       ),
     );
   }
-  
 
   @override
   Widget build(BuildContext context) {
@@ -175,13 +181,13 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
               padding: const EdgeInsets.all(12),
               child: DropdownButton<String>(
                 value: selectedDate,
+                isExpanded: true,
                 onChanged: (value) {
                   if (value != null) {
                     setState(() => selectedDate = value);
                     fetchExercisesByDate(value);
                   }
                 },
-                
                 items: dates
                     .map((dateStr) => DropdownMenuItem(
                           value: dateStr,
@@ -190,29 +196,17 @@ class _ViewWorkoutPlanPageState extends State<ViewWorkoutPlanPage> {
                     .toList(),
               ),
             ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: exercises.length,
-                  itemBuilder: (context, index) {
-                    final exercise = exercises[index];
-
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ExerciseSelectorPage(
-                              workoutId: exercise['Workout_id'],         // ✅ Use this
-                              currentExerciseId: exercise['Exercise_ID'], // ✅ Current selected exercise
-                            ),
-                          ),
-                        );
-                      },
-                      child: buildExerciseCard(exercise),
-                    );
-                  },
-                ),
-              ),
+          Expanded(
+            child: exercises.isEmpty
+                ? const Center(child: Text("No exercises found."))
+                : ListView.builder(
+                    itemCount: exercises.length,
+                    itemBuilder: (context, index) {
+                      final exercise = exercises[index];
+                      return buildExerciseCard(exercise);
+                    },
+                  ),
+          ),
         ],
       ),
     );

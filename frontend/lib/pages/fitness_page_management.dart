@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'edit_fitness_page.dart';
 import 'exercise_model.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class FitnessPageManagementPage extends StatefulWidget {
   @override
@@ -92,26 +93,26 @@ class _FitnessPageManagementPageState extends State<FitnessPageManagementPage> {
     );
   }
 
- void _navigateToEditPage(dynamic exMap) {
-  final exercise = Exercise(
-    id: exMap['Exercise_ID'],
-    name: exMap['name'] ?? '',
-    level: exMap['level'] ?? '',
-    mechanic: exMap['mechanic'] ?? '',
-    equipment: exMap['equipment'] ?? '',
-    primaryMuscles: exMap['primaryMuscles'] ?? '',
-    category: exMap['category'] ?? '',
-    instructions: List<String>.from(exMap['instructions'] ?? []),
-    imageUrls: List<String>.from(exMap['image_urls'] ?? []),
-  );
+  void _navigateToEditPage(dynamic exMap) {
+    final exercise = Exercise(
+      id: exMap['Exercise_ID'],
+      name: exMap['name'] ?? '',
+      level: exMap['level'] ?? '',
+      mechanic: exMap['mechanic'] ?? '',
+      equipment: exMap['equipment'] ?? '',
+      primaryMuscles: exMap['primaryMuscles'] ?? '',
+      category: exMap['category'] ?? '',
+      instructions: List<String>.from(exMap['instructions'] ?? []),
+      imageUrls: List<String>.from(exMap['image_urls'] ?? []),
+    );
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => AddOrEditExercisePage(exercise: exercise),
-    ),
-  ).then((_) => _fetchExercises());
-}
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddOrEditExercisePage(exercise: exercise),
+      ),
+    ).then((_) => _fetchExercises());
+  }
 
   @override
   void dispose() {
@@ -120,23 +121,24 @@ class _FitnessPageManagementPageState extends State<FitnessPageManagementPage> {
     super.dispose();
   }
 
-void _navigateToAddPage() {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => AddOrEditExercisePage(),
-    ),
-  ).then((_) => _fetchExercises());
-}
+  void _navigateToAddPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddOrEditExercisePage(),
+      ),
+    ).then((_) => _fetchExercises());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Manage Exercises')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _navigateToAddPage(),
-      child: Icon(Icons.add),
-      tooltip: 'Add New Exercise',
-    ),
+        child: Icon(Icons.add),
+        tooltip: 'Add New Exercise',
+      ),
       body: Column(
         children: [
           Padding(
@@ -202,14 +204,13 @@ void _navigateToAddPage() {
                                     children: (ex['image_urls'] as List<dynamic>).map((url) {
                                       return Padding(
                                         padding: EdgeInsets.only(right: 10),
-                                        child: Image.network(
-                                          'http://10.0.2.2:5000$url',
+                                        child: CachedNetworkImage(
+                                          imageUrl: 'http://10.0.2.2:5000$url',
                                           height: 100,
                                           width: 100,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Icon(Icons.broken_image, size: 100);
-                                          },
+                                          placeholder: (context, url) => Center(child: CircularProgressIndicator()),
+                                          errorWidget: (context, url, error) => Icon(Icons.broken_image, size: 100),
                                         ),
                                       );
                                     }).toList(),
@@ -220,7 +221,7 @@ void _navigateToAddPage() {
                               SizedBox(height: 8),
                               Text('Instructions:', style: TextStyle(fontWeight: FontWeight.bold)),
                               ...((ex['instructions'] as List<dynamic>?)?.map((step) {
-                                final cleaned = step.toString().replaceAll(RegExp(r'[\[\]\"]'), '').trim();
+                                final cleaned = step.toString().replaceAll(RegExp(r'[\[\]"]'), '').trim();
                                 return Text('• $cleaned');
                               }) ?? [Text("No instructions available")]),
                               SizedBox(height: 10),
