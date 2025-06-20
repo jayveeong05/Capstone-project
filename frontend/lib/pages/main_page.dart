@@ -30,14 +30,13 @@ class _MainPageState extends State<MainPage> {
     });
   }
 
-  // Function to handle logout
-    Future<void> _logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
-    // Ensure you have a login route defined in your MaterialApp
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-  }
-
+  // // Function to handle logout
+  //   Future<void> _logout() async {
+  //   SharedPreferences prefs = await SharedPreferences.getInstance();
+  //   await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
+  //   // Ensure you have a login route defined in your MaterialApp
+  //   Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  // }
 
   // Helper widget to build a standardized section card
   Widget _buildSectionCard({required Widget child, Color? color, double elevation = 4}) {

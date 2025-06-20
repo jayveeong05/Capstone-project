@@ -8,22 +8,18 @@ import re # Import the re module for regeximport os
 import random
 import os
 import shutil
+import json
+import uuid
+from datetime import datetime, timedelta
+from PIL import Image
+from food_recognition import FoodRecognition
+import google.generativeai as genai
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
 IMAGE_DIR = EXERCISE_FOLDER
 
-import json
-import uuid
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-import io
-from PIL import Image
-import requests
-import os
-from food_recognition import FoodRecognition
-import os
-import google.generativeai as genai
+
 
 GOOGLE_API_KEY= 'AIzaSyD5Ilz_JtzhJW_aZup7xBFZs9cOzyW_G6M'
 genai.configure(api_key=GOOGLE_API_KEY)
