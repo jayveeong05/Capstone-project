@@ -66,7 +66,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -131,6 +131,17 @@ def init_db():
                 image_path TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
+    
+    # Create Feedback table
+    c.execute('''CREATE TABLE IF NOT EXISTS Feedback (
+                feedback_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                submitted_at DATE,
+                category TEXT,
+                feedback_text TEXT,
+                status TEXT,
+                FOREIGN KEY (user_id) REFERENCES User(user_id)
+            )''')
                 
     conn.commit()
     conn.close()
@@ -186,6 +197,19 @@ def generate_diet_pref_id():
         return f'UDP{numeric_part:03d}'
     else:
         return 'UDP001'
+
+def generate_feedback_id():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT feedback_id FROM Feedback ORDER BY feedback_id DESC LIMIT 1")
+    last_id_row = c.fetchone()
+    conn.close()
+    if last_id_row:
+        last_id = last_id_row['feedback_id']
+        numeric_part = int(last_id[1:]) + 1
+        return f'F{numeric_part:03d}'
+    else:
+        return 'F001'
 
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -627,7 +651,7 @@ def generate_workout_plan():
         try:
             start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         except ValueError:
-            return jsonify({'error': 'Invalid start_date format. Use YYYY-MM-DD'}), 400
+            return jsonify({'error': 'Invalid start_date format. Use %Y-%m-%d'}), 400
     else:
         start_date = datetime.today()
 
@@ -699,7 +723,7 @@ def get_plan_date(plan_id, date_str):
     try:
         datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
-        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+        return jsonify({"error": "Invalid date format. Use %Y-%m-%d"}), 400
 
     cursor.execute('''
         SELECT w.Workout_id, w.exercise_id, w.date, e.*
@@ -994,7 +1018,6 @@ def get_total_users_count():
         print(f"Database error in get_total_users_count: {e}")
         return jsonify({'error': 'Database error', 'message': str(e)}), 500 # 500 Internal Server Error
     except Exception as e:
-        # Handle other unexpected errors
         print(f"An unexpected error occurred in get_total_users_count: {e}")
         return jsonify({'error': 'Server error', 'message': str(e)}), 500
     finally:
@@ -1221,6 +1244,53 @@ def get_all_feedback():
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
     except Exception as e:
         print(f"An unexpected error occurred in get_all_feedback: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# NEW: API endpoint to submit feedback
+@app.route('/api/feedback', methods=['POST'])
+def submit_feedback():
+    """
+    API endpoint to submit new feedback to the Feedback table.
+    """
+    data = request.get_json()
+    user_id = data.get('user_id')
+    category = data.get('category')
+    feedback_text = data.get('feedback_text')
+
+    if not all([user_id, category, feedback_text]):
+        return jsonify({'error': 'Missing required fields: user_id, category, feedback_text'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        feedback_id = generate_feedback_id()
+        submitted_at = datetime.now().strftime('%Y-%m-%d')
+        status = "Pending"
+
+        cursor.execute('''
+            INSERT INTO Feedback (feedback_id, user_id, submitted_at, category, feedback_text, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (feedback_id, user_id, submitted_at, category, feedback_text, status))
+        conn.commit()
+
+        return jsonify({
+            'message': 'Feedback submitted successfully',
+            'feedback_id': feedback_id,
+            'submitted_at': submitted_at,
+            'status': status
+        }), 201 # 201 Created
+    except sqlite3.Error as e:
+        print(f"Database error in submit_feedback: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in submit_feedback: {e}")
+        conn.rollback()
         return jsonify({'error': 'Server error', 'message': str(e)}), 500
     finally:
         if conn:
@@ -1664,3 +1734,4 @@ if __name__ == '__main__':
     print("  GET  /api/images/<filename> - Serve images")
     
     app.run(debug=True)
+

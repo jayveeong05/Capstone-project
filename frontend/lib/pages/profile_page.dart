@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -14,11 +16,15 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
-  final TextEditingController _locationController = TextEditingController(); // New location controller
+  final TextEditingController _locationController = TextEditingController();
   final TextEditingController _allergiesController = TextEditingController();
   final TextEditingController _foodPreferencesController = TextEditingController();
   final TextEditingController _fitnessGoalsController = TextEditingController();
   final TextEditingController _medicalConditionsController = TextEditingController();
+  final TextEditingController _feedbackTextController = TextEditingController(); // New feedback controller
+
+  String? _selectedFeedbackCategory; // New for feedback category
+  String? _userId; // To store the logged-in user's ID
 
   bool _isLoading = true;
   bool _isEditing = false;
@@ -42,37 +48,57 @@ class _ProfilePageState extends State<ProfilePage> {
     _heightController.dispose();
     _weightController.dispose();
     _ageController.dispose();
-    _locationController.dispose(); // Dispose location controller
+    _locationController.dispose();
     _allergiesController.dispose();
     _foodPreferencesController.dispose();
     _fitnessGoalsController.dispose();
     _medicalConditionsController.dispose();
+    _feedbackTextController.dispose(); // Dispose feedback controller
     super.dispose();
   }
 
   Future<void> _loadProfileData() async {
+    print('Loading profile data...'); // Debug print
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
-      _usernameController.text = prefs.getString('username') ?? 'User';
-      _heightController.text = prefs.getString('height') ?? '';
-      _weightController.text = prefs.getString('weight') ?? '';
-      _ageController.text = prefs.getString('age') ?? '';
-      _locationController.text = prefs.getString('location') ?? ''; // Load location
-      _allergiesController.text = prefs.getString('allergies') ?? '';
-      _foodPreferencesController.text = prefs.getString('foodPreferences') ?? '';
-      _fitnessGoalsController.text = prefs.getString('fitnessGoals') ?? '';
-      _medicalConditionsController.text = prefs.getString('medicalConditions') ?? '';
+      // Safely load all values, converting to string if necessary
+      // This handles cases where any preference might have been
+      // accidentally stored as a different type (e.g., int, bool).
+      var getSafeString = (String key) {
+        var value = prefs.get(key);
+        return value != null ? value.toString() : '';
+      };
+
+      var rawUserId = prefs.get('user_id');
+      _userId = rawUserId != null ? rawUserId.toString() : null;
+      print('Loaded _userId: $_userId'); // Debug print: Check the loaded user ID
+
+      _usernameController.text = getSafeString('username') ?? 'User';
+
+      _heightController.text = (prefs.getDouble('height')?.toString() ?? '');
+      _weightController.text = (prefs.getDouble('weight')?.toString() ?? '');
+      _ageController.text = (prefs.getInt('age')?.toString() ?? '');
+
+      _locationController.text = getSafeString('location');
+      _allergiesController.text = getSafeString('allergies');
+      _foodPreferencesController.text = getSafeString('foodPreferences');
+      _fitnessGoalsController.text = getSafeString('fitnessGoals');
+      _medicalConditionsController.text = getSafeString('medicalConditions');
       _isLoading = false;
+      print('Profile data loaded. _isLoading set to false.'); // Debug print
     });
   }
 
   Future<void> _saveProfileData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString('username', _usernameController.text);
-    await prefs.setString('height', _heightController.text);
-    await prefs.setString('weight', _weightController.text);
-    await prefs.setString('age', _ageController.text);
-    await prefs.setString('location', _locationController.text); // Save location
+    
+    // Save numerical values as their correct types
+    await prefs.setDouble('height', double.tryParse(_heightController.text) ?? 0.0);
+    await prefs.setDouble('weight', double.tryParse(_weightController.text) ?? 0.0);
+    await prefs.setInt('age', int.tryParse(_ageController.text) ?? 0);
+
+    await prefs.setString('location', _locationController.text);
     await prefs.setString('allergies', _allergiesController.text);
     await prefs.setString('foodPreferences', _foodPreferencesController.text);
     await prefs.setString('fitnessGoals', _fitnessGoalsController.text);
@@ -91,12 +117,87 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Future<void> _submitFeedback() async {
+    if (_userId == null || _userId!.isEmpty) { // Added check for empty userId
+      _showSnackBar('User not logged in or user ID is missing.', Colors.red);
+      print('Feedback submission failed: _userId is null or empty.'); // Debug print
+      return;
+    }
+    if (_feedbackTextController.text.isEmpty) {
+      _showSnackBar('Feedback text cannot be empty.', Colors.red);
+      return;
+    }
+    if (_selectedFeedbackCategory == null) {
+      _showSnackBar('Please select a feedback category.', Colors.red);
+      return;
+    }
+
+    // --- MODIFICATION STARTS HERE ---
+    // Ensure the user ID is formatted with 'U' and padded to 3 digits
+    String formattedUserId = _userId!;
+    if (!formattedUserId.startsWith('U')) {
+      // Attempt to parse the numeric part and format it
+      int? userIdInt = int.tryParse(formattedUserId);
+      if (userIdInt != null) {
+        formattedUserId = 'U${userIdInt.toString().padLeft(3, '0')}';
+      } else {
+        // Fallback if parsing fails, or handle as an error
+        print('Warning: _userId could not be parsed as an integer for formatting: $_userId');
+        // You might want to show an error to the user or stop submission here
+        _showSnackBar('User ID is in an unexpected format. Cannot submit feedback.', Colors.red);
+        return;
+      }
+    }
+    // --- MODIFICATION ENDS HERE ---
+
+    final url = Uri.parse('http://10.0.2.2:5000/api/feedback'); // REMINDER: Replace with your actual backend URL
+    print('Submitting feedback with user_id: $formattedUserId, category: $_selectedFeedbackCategory, text: ${_feedbackTextController.text}'); // Debug print: Check data being sent
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': formattedUserId, // Use the formattedUserId here
+          'category': _selectedFeedbackCategory,
+          'feedback_text': _feedbackTextController.text,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        _showSnackBar('Feedback submitted successfully!', Colors.green);
+        _feedbackTextController.clear();
+        setState(() {
+          _selectedFeedbackCategory = null;
+        });
+        print('Feedback submitted successfully. Response: ${response.body}'); // Debug print
+      } else {
+        final errorData = json.decode(response.body);
+        _showSnackBar('Failed to submit feedback: ${errorData['error']}', Colors.red);
+        print('Feedback submission failed. Status: ${response.statusCode}, Error: ${errorData['error']}'); // Debug print
+      }
+    } catch (e) {
+      _showSnackBar('An error occurred: $e', Colors.red);
+      print('Caught exception during feedback submission: $e'); // Debug print
+    }
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   void _toggleEditMode() {
     setState(() => _isEditing = !_isEditing);
   }
 
   void _openLocationPicker() async {
-    // In a real app, you would integrate with a map API or location service
     final result = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -119,7 +220,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return ListTile(
       leading: Icon(icon, color: _primaryColor),
       title: Text(title),
-      onTap: () => Navigator.pop(context, title),
+      onTap: () => Navigator.pop(context, title)
     );
   }
 
@@ -182,7 +283,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           Expanded(
                             child: GestureDetector(
                               onTap: _isEditing ? _openLocationPicker : null,
-                              child: _buildLocationField(), // Special location field
+                              child: _buildLocationField(),
                             ),
                           ),
                         ],
@@ -211,6 +312,35 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: Icons.fitness_center_outlined,
                     children: [
                       _buildEditableField('Goals', _fitnessGoalsController, hint: 'Lose 5kg, Build muscle, etc.', maxLines: 3),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Feedback Section
+                  _buildSection(
+                    title: "Send Feedback",
+                    icon: Icons.feedback_outlined,
+                    children: [
+                      _buildFeedbackCategoryDropdown(),
+                      const SizedBox(height: 16),
+                      _buildFeedbackTextField(),
+                      const SizedBox(height: 20),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: _submitFeedback,
+                          icon: const Icon(Icons.send, color: Colors.white),
+                          label: const Text('SUBMIT FEEDBACK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primaryColor,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 3,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 32),
@@ -341,6 +471,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
       padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.only(bottom: 24), // Add margin bottom for spacing
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -458,6 +589,93 @@ class _ProfilePageState extends State<ProfilePage> {
                     onPressed: _openLocationPicker,
                   ),
               ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // New Widget for Feedback Category Dropdown
+  Widget _buildFeedbackCategoryDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Category',
+          style: TextStyle(
+            color: _textColor.withOpacity(0.8),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _primaryColor.withOpacity(0.3),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: _selectedFeedbackCategory,
+              hint: Text('Select a category', style: TextStyle(color: Colors.grey[400])),
+              icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+              style: TextStyle(color: _textColor, fontSize: 16),
+              onChanged: (String? newValue) {
+                setState(() {
+                  _selectedFeedbackCategory = newValue;
+                });
+              },
+              items: <String>['Bug Report', 'Feature Request', 'General Feedback', 'Other']
+                  .map<DropdownMenuItem<String>>((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // New Widget for Feedback Text Field
+  Widget _buildFeedbackTextField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your Feedback',
+          style: TextStyle(
+            color: _textColor.withOpacity(0.8),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _primaryColor.withOpacity(0.3),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _feedbackTextController,
+              maxLines: 5,
+              style: TextStyle(color: _textColor, fontSize: 16),
+              decoration: InputDecoration(
+                hintText: 'Type your feedback here...',
+                hintStyle: TextStyle(color: Colors.grey[400]),
+                border: InputBorder.none,
+              ),
             ),
           ),
         ),
