@@ -211,6 +211,19 @@ def generate_feedback_id():
     else:
         return 'F001'
 
+def generate_log_id(): #
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT log_id FROM SystemLog ORDER BY log_id DESC LIMIT 1")
+    last_id_row = c.fetchone()
+    conn.close()
+    if last_id_row:
+        last_id = last_id_row['log_id']
+        numeric_part = int(last_id[1:]) + 1
+        return f'L{numeric_part:03d}'
+    else:
+        return 'L001'
+
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
@@ -326,19 +339,36 @@ def login():
     # Fetch role along with other user data
     c.execute("SELECT user_id, password, role FROM User WHERE username = ?", (username,))
     user = c.fetchone()
-    conn.close()
-
+    
     if user and check_password_hash(user['password'], password):
-        # Return role in the response
         if user['role'] == 2: # Check if user role is 'banned'
+            conn.close()
             return jsonify({'error': 'Your account has been disabled. Please contact support.'}), 403
+
+        try: #
+            # Log successful login
+            log_id = generate_log_id() #
+            user_id = user['user_id'] #
+            action = "Logged in" #
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") #
+            
+            c.execute("INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)", #
+                      (log_id, user_id, action, timestamp)) #
+            conn.commit() #
+        except Exception as e: #
+            print(f"Error logging login activity: {e}") #
+            # Continue with login success even if logging fails
+
+        conn.close()
         return jsonify({
             'message': 'Login successful',
             'user_id': user['user_id'],
             'role': user['role']  # Add role to response
         }), 200
     else:
+        conn.close()
         return jsonify({'error': 'Invalid username or password'}), 401
+
 
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
