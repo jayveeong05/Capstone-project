@@ -270,7 +270,81 @@ Future<void> writeLog(String username, String action) async {
     );
   }
 }
+Future<void> _showAccessControlDialog() async {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: const Text('Access Control Configuration'),
+        content: const Text('Do you want to disable or enable the system for regular users?'),
+        actions: [
+          TextButton(
+            child: const Text('Disable System'),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              _toggleSystemStatus(true); // Call function to disable
+            },
+          ),
+          TextButton(
+            child: const Text('Enable System'),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              _toggleSystemStatus(false); // Call function to enable
+            },
+          ),
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
+Future<void> _toggleSystemStatus(bool disable) async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  final adminUserId = prefs.getInt('user_id');
+
+  if (adminUserId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Error: Admin User ID not found.')),
+    );
+    return;
+  }
+
+  final String endpoint = disable ? '/api/system/disable' : '/api/system/enable';
+  final String actionText = disable ? 'disabling' : 'enabling';
+
+  final uri = Uri.parse('$_backendBaseUrl$endpoint');
+  try {
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'admin_user_id': adminUserId}),
+    );
+
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ System successfully $actionText.')),
+      );
+      // Optionally reload admin data to reflect changes if necessary
+      _loadAdminData();
+    } else {
+      final Map<String, dynamic> data = json.decode(response.body);
+      String errorMessage = data['message'] ?? data['error'] ?? 'Unknown error';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Failed to $actionText system: $errorMessage')),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Network error during system $actionText: $e')),
+    );
+  }
+}
   Widget _adminOverviewCard(IconData icon, String title, String value, Color color) {
     return Card(
       elevation: 4,
@@ -440,7 +514,7 @@ Future<void> writeLog(String username, String action) async {
                   const Text('System Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   _buildHierarchyModuleCard('System Settings', Icons.settings, Colors.orange, [
-                    {'name': 'Access Control Configuration', 'onTap': () => _showFeatureComingSoon('Access Control Configuration')},
+                    {'name': 'Access Control Configuration', 'onTap': _showAccessControlDialog},
                     {'name': 'System Notifications', 'onTap': () => _showFeatureComingSoon('System Notifications')},
                   ]),
                   const SizedBox(height: 24),

@@ -344,7 +344,10 @@ def login():
         if user['role'] == 2: # Check if user role is 'banned'
             conn.close()
             return jsonify({'error': 'Your account has been disabled. Please contact support.'}), 403
-
+        if user['role'] == 3 and user['role'] != 0: # If role is 3 (temp disabled) and not admin
+            conn.close()
+            return jsonify({'error': 'System is currently under maintenance. Please try again later.'}), 403
+        
         try: #
             # Log successful login
             log_id = generate_log_id() #
@@ -2052,6 +2055,83 @@ def logout():
         if conn:
             conn.close()
 
+@app.route('/api/system/disable', methods=['POST'])
+def disable_system():
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id')
+    formatted_admin_user_id = f"U{admin_user_id:03d}"
+
+    if not admin_user_id:
+        return jsonify({'error': 'Admin user ID is required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (formatted_admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can disable the system.'}), 403
+
+        # Update all users with role 1 to role 3
+        cursor.execute("UPDATE User SET role = 3 WHERE role = 1")
+        conn.commit()
+        return jsonify({'message': 'System disabled: All regular users temporarily set to role 3.'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in disable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in disable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/system/enable', methods=['POST'])
+def enable_system():
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id')
+    formatted_admin_user_id = f"U{admin_user_id:03d}"
+
+    if not admin_user_id:
+        return jsonify({'error': 'Admin user ID is required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (formatted_admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can enable the system.'}), 403
+
+        # Update all users with role 3 back to role 1
+        cursor.execute("UPDATE User SET role = 1 WHERE role = 3")
+        conn.commit()
+        return jsonify({'message': 'System enabled: All temporarily disabled users set back to role 1.'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in enable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in enable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('./backend/temp', exist_ok=True)
