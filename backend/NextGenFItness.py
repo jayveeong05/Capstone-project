@@ -21,6 +21,7 @@ from PIL import Image
 import requests
 import os
 from food_recognition import FoodRecognition
+from diet_plan_system import DietPlanSystem, integrate_diet_system_with_app, setup_diet_plan_routes
 import os
 import google.generativeai as genai
 
@@ -74,6 +75,7 @@ def get_db_connection():
     conn = sqlite3.connect('./backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = get_db_connection()
@@ -139,6 +141,7 @@ def init_db():
                 
     conn.commit()
     conn.close()
+
 
 def generate_user_id():
     conn = get_db_connection()
@@ -1089,6 +1092,9 @@ if __name__ == '__main__':
     
     # Initialize database
     init_db()
+    diet_system = DietPlanSystem(get_db_connection)
+    diet_system.init_diet_plan_tables()
+    setup_diet_plan_routes(app, diet_system)
     
     # Set max file size
     app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
@@ -1103,5 +1109,7 @@ if __name__ == '__main__':
     print("  GET  /api/nutrition-info/<food_name> - Get nutrition info")
     print("  GET  /api/search-food - Search food items")
     print("  GET  /api/images/<filename> - Serve images")
-    
+    print("\n--- Registered Routes ---")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.rule} [{rule.methods}]")
     app.run(debug=True)

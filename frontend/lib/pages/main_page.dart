@@ -5,6 +5,7 @@ import 'all_workoutplan_page.dart';
 import 'MealPlansPage.dart';
 import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
+import 'diet_plan_page.dart'; 
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -185,8 +186,9 @@ class _MainPageState extends State<MainPage> {
 
   Future<String?> _getUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    // Adjust the key if you store user_id as int or string
-    return prefs.getString('user_id') ?? prefs.getInt('user_id')?.toString();
+    final dynamic id = prefs.get('user_id');
+    if (id == null) return null;
+    return id.toString();
   }
 
   @override
@@ -382,10 +384,22 @@ class _MainPageState extends State<MainPage> {
                     ),
                   _buildUtilityCard(
                       Icons.restaurant_menu, 'Meal Plans', Colors.teal,
-                      () {
-                    // TODO: Navigate to Meal Plan Page
-                    print('Navigate to Meal Plan');
-                  }),
+                      () async {
+                        String? userId = await _getUserId();
+                        if (userId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DietPlansPage(userId: userId),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('User not found. Please log in again.')),
+                          );
+                        }
+                      },
+                  ),
                   _buildUtilityCard(
                       Icons.video_library, 'Exercise Library', Colors.redAccent,
                       () {
