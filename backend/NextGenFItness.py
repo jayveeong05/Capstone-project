@@ -349,7 +349,7 @@ def login():
             # Log successful login
             log_id = generate_log_id() #
             user_id = user['user_id'] #
-            action = "Logged in" #
+            action = "Logged In" #
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") #
             
             c.execute("INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)", #
@@ -1866,6 +1866,50 @@ Now, please respond to the user's question about fitness, nutrition, or wellness
     except Exception as e:
         print(f"Error in /api/chatbot: {e}")
         return jsonify({'reply': 'Sorry, something went wrong. Please try asking about your fitness or nutrition goals!', 'success': False}), 500
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    """
+    API endpoint for logging user logout activity.
+    Expects user_id in the request body.
+    """
+    data = request.get_json()
+    user_id = data.get('user_id')
+    formatted_user_id = f"U{user_id:03d}"
+
+    if not user_id:
+        return jsonify({'error': 'User ID is required for logout logging'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+
+        # Log successful logout
+        log_id = generate_log_id()
+        action = "Logged Out"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        c.execute("INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)",
+                  (log_id, formatted_user_id, action, timestamp))
+        conn.commit()
+
+        return jsonify({'message': 'Logout activity logged successfully', 'success': True}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error logging logout activity: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error during logout logging', 'success': False}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred during logout logging: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Internal server error during logout logging', 'success': False}), 500
+    finally:
+        if conn:
+            conn.close()
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('./backend/temp', exist_ok=True)

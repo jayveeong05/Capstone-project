@@ -75,7 +75,28 @@ Future<void> _logout() async {
   if (confirm == true) {
     final prefs = await SharedPreferences.getInstance();
     final username = prefs.getString('username') ?? 'User';
+    final userId = prefs.getInt('user_id');
     await writeLog(username, 'logged out');
+    if (userId != null) {
+      try {
+        final uri = Uri.parse('http://10.0.2.2:5000/logout'); // Use the correct logout endpoint
+        final response = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'user_id': userId}),
+        );
+
+        if (response.statusCode == 200) {
+          print('✅ Backend: Logout activity logged successfully for user $userId');
+        } else {
+          print('❌ Backend: Failed to log logout activity. Status: ${response.statusCode}, Body: ${response.body}');
+        }
+      } catch (e) {
+        print('❌ Backend: Error sending logout request: $e');
+      }
+    } else {
+      print('❌ No user ID found in SharedPreferences for backend logout logging.');
+    }    
 
     // Show SnackBar before navigating away
     ScaffoldMessenger.of(context).showSnackBar(
