@@ -1867,6 +1867,148 @@ Now, please respond to the user's question about fitness, nutrition, or wellness
         print(f"Error in /api/chatbot: {e}")
         return jsonify({'reply': 'Sorry, something went wrong. Please try asking about your fitness or nutrition goals!', 'success': False}), 500
 
+@app.route('/api/analytics/user_engagement', methods=['GET'])
+def get_user_engagement_analytics():
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Define time ranges for analysis
+        now = datetime.now()
+        thirty_minutes_ago = now - timedelta(minutes=30)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        seven_days_ago = now - timedelta(days=7)
+
+        # 1. Total Logins/Logouts (All time)
+        cursor.execute("SELECT action, COUNT(*) as count FROM SystemLog GROUP BY action")
+        overall_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        total_logins = overall_activity.get('Logged In', 0)
+        total_logouts = overall_activity.get('Logged Out', 0)
+
+        # 2. Logins/Logouts in last 30 minutes
+        cursor.execute(
+            "SELECT action, COUNT(*) as count FROM SystemLog WHERE timestamp >= ? GROUP BY action",
+            (thirty_minutes_ago.strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        last_30_min_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        logins_last_30_minutes = last_30_min_activity.get('Logged In', 0)
+        logouts_last_30_minutes = last_30_min_activity.get('Logged Out', 0)
+
+        # 3. Logins/Logouts in last 24 hours
+        cursor.execute(
+            "SELECT action, COUNT(*) as count FROM SystemLog WHERE timestamp >= ? GROUP BY action",
+            (twenty_four_hours_ago.strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        last_24_hours_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        logins_last_24_hours = last_24_hours_activity.get('Logged In', 0)
+        logouts_last_24_hours = last_24_hours_activity.get('Logged Out', 0)
+
+        # 4. Logins/Logouts in last 7 days
+        cursor.execute(
+            "SELECT action, COUNT(*) as count FROM SystemLog WHERE timestamp >= ? GROUP BY action",
+            (seven_days_ago.strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        last_7_days_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        logins_last_7_days = last_7_days_activity.get('Logged In', 0)
+        logouts_last_7_days = last_7_days_activity.get('Logged Out', 0)
+
+
+        # 5. Unique Users Logged In (last 24 hours, last 7 days, overall)
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM SystemLog WHERE action = 'Logged In' AND timestamp >= ?",
+                       (twenty_four_hours_ago.strftime("%Y-%m-%d %H:%M:%S"),))
+        unique_users_24h = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM SystemLog WHERE action = 'Logged In' AND timestamp >= ?",
+                       (seven_days_ago.strftime("%Y-%m-%d %H:%M:%S"),))
+        unique_users_7d = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM SystemLog WHERE action = 'Logged In'")
+        unique_users_overall = cursor.fetchone()[0]
+
+        # 6. Top N Users by Login Count (e.g., top 5 overall)
+        cursor.execute("""
+            SELECT user_id, COUNT(*) as login_count
+            FROM SystemLog
+            WHERE action = 'Logged In'
+            GROUP BY user_id
+            ORDER BY login_count DESC
+            LIMIT 5
+        """)
+        top_users_by_logins = [dict(row) for row in cursor.fetchall()]
+
+        # 7. Hourly Login/Logout Trends for the last 24 hours
+        hourly_trends = []
+        for i in range(24):
+            # Calculate the start and end of each hour window, relative to 'now'
+            # For 00:00, it's 24 hours ago, for 01:00 it's 23 hours ago, etc.
+            # So, hour_start is 23-i hours ago, and hour_end is 22-i hours ago.
+            hour_start = now - timedelta(hours=(23 - i))
+            hour_end = now - timedelta(hours=(22 - i))
+            
+            cursor.execute(
+                """SELECT action, COUNT(*) as count FROM SystemLog
+                   WHERE timestamp >= ? AND timestamp < ?
+                   GROUP BY action""",
+                (hour_start.strftime("%Y-%m-%d %H:%M:%S"), hour_end.strftime("%Y-%m-%d %H:%M:%S"))
+            )
+            hourly_data = {row['action']: row['count'] for row in cursor.fetchall()}
+            
+            hourly_trends.append({
+                'hour': hour_start.strftime("%H:00"),
+                'logins': hourly_data.get('Logged In', 0),
+                'logouts': hourly_data.get('Logged Out', 0)
+            })
+
+        # 8. Daily Login/Logout Trends for the last 7 days
+        daily_trends = []
+        for i in range(7):
+            day = now - timedelta(days=(6 - i))
+            day_start = datetime(day.year, day.month, day.day, 0, 0, 0)
+            day_end = datetime(day.year, day.month, day.day, 23, 59, 59)
+
+            cursor.execute(
+                """SELECT action, COUNT(*) as count FROM SystemLog
+                   WHERE timestamp >= ? AND timestamp <= ?
+                   GROUP BY action""",
+                (day_start.strftime("%Y-%m-%d %H:%M:%S"), day_end.strftime("%Y-%m-%d %H:%M:%S"))
+            )
+            daily_data = {row['action']: row['count'] for row in cursor.fetchall()}
+
+            daily_trends.append({
+                'date': day.strftime("%Y-%m-%d"),
+                'logins': daily_data.get('Logged In', 0),
+                'logouts': daily_data.get('Logged Out', 0)
+            })
+            
+        return jsonify({
+            'overall_logins': total_logins,
+            'overall_logouts': total_logouts,
+            'logins_last_30_minutes': logins_last_30_minutes,
+            'logouts_last_30_minutes': logouts_last_30_minutes,
+            'logins_last_24_hours': logins_last_24_hours,
+            'logouts_last_24_hours': logouts_last_24_hours,
+            'logins_last_7_days': logins_last_7_days,
+            'logouts_last_7_days': logouts_last_7_days,
+            'unique_users_24h': unique_users_24h,
+            'unique_users_7d': unique_users_7d,
+            'unique_users_overall': unique_users_overall,
+            'top_users_by_logins': top_users_by_logins,
+            'hourly_trends': hourly_trends,
+            'daily_trends': daily_trends,
+            'success': True
+        }), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_user_engagement_analytics: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e), 'success': False}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_user_engagement_analytics: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e), 'success': False}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/logout', methods=['POST'])
 def logout():
     """

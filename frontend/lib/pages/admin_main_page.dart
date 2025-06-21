@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/user_engagement_analytics_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -423,7 +424,13 @@ Future<void> writeLog(String username, String action) async {
                   const Text('Data Analytic and Report', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   _buildHierarchyModuleCard('Data Analytic and Report', Icons.analytics, Colors.purple, [
-                    {'name': 'User Engagement Data Analytics', 'onTap': () => _showFeatureComingSoon('User Engagement Data Analytics')},
+                    {
+                      'name': 'User Engagement Data Analytics',
+                      'onTap': () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const UserEngagementAnalyticsPage()),
+                      ),
+                    },
                     {'name': 'User Fitness Progress Data Analytics', 'onTap': () => _showFeatureComingSoon('User Fitness Progress Data Analytics')},
                     {'name': 'User Dietary Habit Data Analytics', 'onTap': () => _showFeatureComingSoon('User Dietary Habit Data Analytics')},
                     {'name': 'Report Generation', 'onTap': () => _showFeatureComingSoon('Report Generation')},
