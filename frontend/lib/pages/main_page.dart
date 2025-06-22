@@ -1,5 +1,4 @@
 import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'fitness_page.dart';
@@ -187,27 +186,6 @@ Future<void> _logout() async {
       child: Padding(
         padding: const EdgeInsets.all(20.0),
         child: child,
-      ),
-    );
-  }
-
-  // Helper widget to build a quick stat item
-  Widget _buildStatItem(IconData icon, String label, String value, Color color) {
-    return Expanded( // Use Expanded for even distribution
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-                fontSize: 15, fontWeight: FontWeight.bold, color: color),
-          ),
-        ],
       ),
     );
   }
