@@ -240,7 +240,51 @@ class DietPlanDetailPage extends StatelessWidget {
                       final recipe = meal['recipe'];
                       return ListTile(
                         title: Text('${meal['meal_type']}: ${recipe['title']}'),
-                        subtitle: Text('Calories: ${recipe['calories']}'),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Calories: ${recipe['calories']}'),
+                            const SizedBox(height: 4),
+                            Text('Ingredients: ${recipe['ingredients']}'),
+                            const SizedBox(height: 2),
+                            Text('Instructions: ${recipe['instructions']}', maxLines: 3, overflow: TextOverflow.ellipsis),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton(
+                                child: const Text('View Full Recipe'),
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return AlertDialog(
+                                        title: Text(recipe['title']),
+                                        content: SingleChildScrollView(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text('Ingredients:', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                              Text(recipe['ingredients'] ?? 'N/A'),
+                                              const SizedBox(height: 10),
+                                              Text('Instructions:', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                              Text(recipe['instructions'] ?? 'N/A'),
+                                            ],
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(context).pop(),
+                                            child: const Text('Close'),
+                                          )
+                                        ],
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            )
+                          ],
+                        ),
+                        isThreeLine: true,
                       );
                     }).toList(),
                   ),
