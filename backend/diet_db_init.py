@@ -17,19 +17,36 @@ def init_diet_plan_tables(get_db_connection):
     c.execute('DROP TABLE IF EXISTS NutritionTargets')
     c.execute('DROP TABLE IF EXISTS MealPlan')
     c.execute('DROP TABLE IF EXISTS DietPlan')
+    c.execute('DROP TABLE IF EXISTS DietPlan')
     c.execute('DROP TABLE IF EXISTS UserDietPreference')
 
-    # DietPlan table
+    # # DietPlan table
+    # c.execute('''CREATE TABLE DietPlan (
+    #                 diet_plan_id TEXT PRIMARY KEY,
+    #                 user_id TEXT NOT NULL,
+    #                 plan_name TEXT,
+    #                 description TEXT,
+    #                 daily_calories INTEGER,
+    #                 duration_days INTEGER DEFAULT 7,
+    #                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    #                 status TEXT DEFAULT 'Active',
+    #                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
     c.execute('''CREATE TABLE DietPlan (
                     diet_plan_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
                     plan_name TEXT,
                     description TEXT,
+                    start_date DATE,
+                    end_date DATE,
                     daily_calories INTEGER,
+                    protein_grams INTEGER,
+                    carbs_grams INTEGER,
+                    fat_grams INTEGER,
+                    fiber_grams INTEGER,
                     duration_days INTEGER DEFAULT 7,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     status TEXT DEFAULT 'Active',
-                    FOREIGN KEY (user_id) REFERENCES User(user_id))''')
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES User(user_id));''')
 
     # MealPlan table
     c.execute('''CREATE TABLE MealPlan (
@@ -44,17 +61,17 @@ def init_diet_plan_tables(get_db_connection):
                     FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id),
                     FOREIGN KEY (recipe_id) REFERENCES RecipeLibrary(recipe_id))''')
 
-    # NutritionTargets table
-    c.execute('''CREATE TABLE NutritionTargets (
-                    target_id TEXT PRIMARY KEY,
-                    diet_plan_id TEXT NOT NULL,
-                    daily_calories INTEGER,
-                    protein_grams INTEGER,
-                    carbs_grams INTEGER,
-                    fat_grams INTEGER,
-                    fiber_grams INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
+    # # NutritionTargets table
+    # c.execute('''CREATE TABLE NutritionTargets (
+    #                 target_id TEXT PRIMARY KEY,
+    #                 diet_plan_id TEXT NOT NULL,
+    #                 daily_calories INTEGER,
+    #                 protein_grams INTEGER,
+    #                 carbs_grams INTEGER,
+    #                 fat_grams INTEGER,
+    #                 fiber_grams INTEGER,
+    #                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    #                 FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
 
     # UserDietPlanProgress table
     c.execute('''CREATE TABLE UserDietPlanProgress (
@@ -78,7 +95,6 @@ def init_diet_plan_tables(get_db_connection):
                     diet_type TEXT,
                     dietary_goal TEXT,
                     allergies TEXT,
-                    calories INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES User(user_id))''')
@@ -111,16 +127,16 @@ def init_diet_plan_tables(get_db_connection):
                     FOREIGN KEY (diet_pref_id) REFERENCES UserDietPreference(diet_pref_id),
                     FOREIGN KEY (ingredient_id) REFERENCES Ingredient(ingredient_id))''')
 
-    # RecipeIngredient table
-    c.execute('''CREATE TABLE RecipeIngredient (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    recipe_id TEXT NOT NULL,
-                    ingredient_id TEXT NOT NULL,
-                    quantity TEXT,
-                    unit TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (recipe_id) REFERENCES RecipeLibrary(recipe_id),
-                    FOREIGN KEY (ingredient_id) REFERENCES Ingredient(ingredient_id))''')
+    # # RecipeIngredient table
+    # c.execute('''CREATE TABLE RecipeIngredient (
+    #                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+    #                 recipe_id TEXT NOT NULL,
+    #                 ingredient_id TEXT NOT NULL,
+    #                 quantity TEXT,
+    #                 unit TEXT,
+    #                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    #                 FOREIGN KEY (recipe_id) REFERENCES RecipeLibrary(recipe_id),
+    #                 FOREIGN KEY (ingredient_id) REFERENCES Ingredient(ingredient_id))''')
 
     # Indexes for performance
     c.execute('CREATE INDEX IF NOT EXISTS idx_diet_plan_user ON DietPlan(user_id)')

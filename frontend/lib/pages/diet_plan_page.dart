@@ -23,7 +23,6 @@ class _DietPlansPageState extends State<DietPlansPage> {
   }
 
   Future<void> _fetchDietPlans() async {
-    
     setState(() {
       _loading = true;
       _error = null;
@@ -76,6 +75,16 @@ class _DietPlansPageState extends State<DietPlansPage> {
 
   @override
   Widget build(BuildContext context) {
+    final activePlan = _plans.firstWhere(
+      (plan) => plan['status'] == 'Active' || plan['user_status'] == 'Active',
+      orElse: () => <String, dynamic>{},
+    );
+    final archivedPlans = _plans
+        .where((plan) =>
+            (plan['status'] != 'Active' && plan['user_status'] != 'Active') &&
+            plan['diet_plan_id'] != activePlan['diet_plan_id'])
+        .toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text('My Diet Plan')),
       body: _loading
@@ -96,46 +105,78 @@ class _DietPlansPageState extends State<DietPlansPage> {
                         ],
                       ),
                     )
-                  : Column(
-                      children: [
-                        Expanded(
-                          child: ListView.builder(
-                            itemCount: _plans.length,
-                            itemBuilder: (context, index) {
-                              final plan = _plans[index];
-                              final status = plan['status'] ?? 'Unknown';
-
-                              final statusColor = {
-                                'Ongoing': Colors.green,
-                                'Finished': Colors.red,
-                                'Replaced': Colors.grey,
-                              }[status] ?? Colors.blueGrey;
-
-                              return Card(
-                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                child: ListTile(
-                                  title: Text(plan['plan_name'] ?? 'My Diet Plan'),
-                                  subtitle: Text('Start: ${plan['start_date']} | End: ${plan['end_date']}'),
-                                  trailing: Chip(
-                                    label: Text(status),
-                                    backgroundColor: statusColor.withOpacity(0.2),
-                                    labelStyle: TextStyle(color: statusColor),
-                                  ),
-                                  onTap: () => _openDietPlanDetails(plan['diet_plan_id']),
-                                ),
-                              );
-                            },
+                  : RefreshIndicator(
+                      onRefresh: _fetchDietPlans,
+                      child: ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          Text(
+                            'Active Diet Plan',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: ElevatedButton.icon(
+                          const SizedBox(height: 8),
+                          if (activePlan.isNotEmpty)
+                            Card(
+                              color: Colors.green[50],
+                              child: ListTile(
+                                title: Text(activePlan['plan_name'] ?? 'My Diet Plan'),
+                                subtitle: Text(
+                                    'Start: ${activePlan['start_date']} | End: ${activePlan['end_date']}'),
+                                trailing: Chip(
+                                  label: const Text('Active'),
+                                  backgroundColor: Colors.green.withOpacity(0.2),
+                                  labelStyle:
+                                      const TextStyle(color: Colors.green),
+                                ),
+                                onTap: () => _openDietPlanDetails(
+                                    activePlan['diet_plan_id']),
+                              ),
+                            )
+                          else
+                            const Text('No active diet plan.'),
+                          const SizedBox(height: 24),
+                          Text(
+                            'Archived Plans',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          if (archivedPlans.isEmpty)
+                            const Text('No archived plans.'),
+                          ...archivedPlans.map((plan) {
+                            final status =
+                                plan['user_status'] ?? plan['status'] ?? 'Unknown';
+                            final statusColor = {
+                              'Finished': Colors.red,
+                              'Replaced': Colors.grey,
+                              'Cancelled': Colors.orange,
+                            }[status] ??
+                                Colors.blueGrey;
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              child: ListTile(
+                                title:
+                                    Text(plan['plan_name'] ?? 'My Diet Plan'),
+                                subtitle: Text(
+                                    'Start: ${plan['start_date']} | End: ${plan['end_date']}'),
+                                trailing: Chip(
+                                  label: Text(status),
+                                  backgroundColor: statusColor.withOpacity(0.2),
+                                  labelStyle:
+                                      TextStyle(color: statusColor),
+                                ),
+                                onTap: () => _openDietPlanDetails(
+                                    plan['diet_plan_id']),
+                              ),
+                            );
+                          }).toList(),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
                             onPressed: _openGenerateDietPlan,
                             icon: const Icon(Icons.add),
                             label: const Text('Create New Plan'),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
     );
   }
@@ -171,10 +212,8 @@ class DietPlanDetailPage extends StatelessWidget {
           }
           final plan = snapshot.data!;
           final mealPlan = plan['meal_plan'] as Map<String, dynamic>;
-
           final diet = plan['diet_plan'];
 
-          // Access merged fields directly
           final status = diet['user_status'] ?? diet['status'] ?? 'Unknown';
           final startDate = diet['start_date'] ?? 'N/A';
           final endDate = diet['end_date'] ?? 'N/A';
@@ -184,8 +223,10 @@ class DietPlanDetailPage extends StatelessWidget {
             children: [
               Text(diet['plan_name'] ?? '', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
+              Text('Description: ${diet['description'] ?? 'No description'}', style: const TextStyle(color: Colors.blueGrey)),
               Text('Status: $status'),
-              Text('Calories per day: ${diet['daily_calories']}'),
+              Text('Calories/day: ${diet['daily_calories']}'),
+              Text('Protein: ${diet['protein_grams']}g | Carbs: ${diet['carbs_grams']}g | Fat: ${diet['fat_grams']}g | Fiber: ${diet['fiber_grams']}g'),
               Text('Duration: ${diet['duration_days']} days'),
               Text('Start Date: $startDate'),
               Text('End Date: $endDate'),
@@ -208,93 +249,6 @@ class DietPlanDetailPage extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-class GenerateDietPlanPage extends StatefulWidget {
-  final String userId;
-  const GenerateDietPlanPage({required this.userId, super.key});
-
-  @override
-  State<GenerateDietPlanPage> createState() => _GenerateDietPlanPageState();
-}
-
-class _GenerateDietPlanPageState extends State<GenerateDietPlanPage> {
-  final _formKey = GlobalKey<FormState>();
-  int _durationDays = 7;
-  String _planName = 'My Diet Plan';
-  bool _loading = false;
-  String? _error;
-
-  Future<void> _generatePlan() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse('http://10.0.2.2:5000/api/generate-diet-plan'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'user_id': widget.userId,
-          'duration_days': _durationDays,
-          'plan_name': _planName,
-        }),
-      );
-      if (response.statusCode == 201) {
-        Navigator.pop(context, true);
-      } else {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _error = data['error'] ?? 'Failed to generate plan';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-    } finally {
-      setState(() {
-        _loading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Generate Diet Plan')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                initialValue: _planName,
-                decoration: const InputDecoration(labelText: 'Plan Name'),
-                onChanged: (v) => _planName = v,
-              ),
-              TextFormField(
-                initialValue: '7',
-                decoration: const InputDecoration(labelText: 'Duration (days)'),
-                keyboardType: TextInputType.number,
-                onChanged: (v) => _durationDays = int.tryParse(v) ?? 7,
-              ),
-              const SizedBox(height: 20),
-              if (_error != null)
-                Text(_error!, style: const TextStyle(color: Colors.red)),
-              ElevatedButton(
-                onPressed: _loading ? null : _generatePlan,
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : const Text('Generate'),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

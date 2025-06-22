@@ -114,18 +114,6 @@ def init_db():
                 status TEXT,
                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
 
-    # Create UserDietPreference table
-    c.execute('''CREATE TABLE IF NOT EXISTS UserDietPreference
-                (diet_pref_id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                ingredient_id TEXT,
-                diet_type TEXT,
-                dietary_goal TEXT,
-                allergies TEXT,
-                calories INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES User(user_id))''')
-
 
     # Create MealScans table
     c.execute('''CREATE TABLE IF NOT EXISTS MealScans

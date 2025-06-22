@@ -22,6 +22,8 @@ class DietPlanSystem:
     def __init__(self, db_connection_func):
         """Initialize with database connection function"""
         self.get_db_connection = db_connection_func
+
+    
     
     def generate_diet_plan_id(self):
         """Generate unique diet plan ID"""
@@ -97,6 +99,38 @@ class DietPlanSystem:
             if allergen_info and allergen_info.strip().lower() != "none":
                 allergen_map[name.strip()] = allergen_info.strip()
         return allergen_map
+    
+    def is_diet_compatible(self, ingredients, dietary_preference, fitness_goal=None, recipe_nutrition=None):
+        """Check if recipe is compatible with dietary and fitness goals"""
+        restricted_ingredients = {
+            'vegetarian': {"chicken breast", "beef", "turkey breast", "salmon", "cod", "shrimp"},
+            'vegan': {"chicken breast", "beef", "turkey breast", "salmon", "cod", "shrimp",
+                    "milk", "cheese", "egg", "greek yogurt", "mayonnaise", "butter", "yogurt"},
+            'pescatarian': {"chicken breast", "beef", "turkey breast"},
+            'halal': {"pork", "bacon", "ham", "lard", "gelatin (non-halal)"},
+            'kosher': {"pork", "shellfish", "shrimp", "bacon", "ham", "lobster"}
+        }
+
+        # Normalize ingredients
+        restricted = restricted_ingredients.get(dietary_preference.lower(), set())
+        for ingredient in ingredients:
+            normalized = ingredient.strip().lower()
+            if normalized in restricted:
+                return False
+
+        # Optional: Fitness goal filtering based on macros
+        if recipe_nutrition and fitness_goal:
+            cal = recipe_nutrition.get('calories', 0)
+            protein = recipe_nutrition.get('protein', 0)
+
+            if fitness_goal == "weight loss" and cal > 600:
+                return False  # skip high-calorie meals
+            elif fitness_goal == "muscle gain" and protein < 20:
+                return False  # skip low-protein meals
+            elif fitness_goal == "maintenance" and cal > 800:
+                return False
+
+        return True
 
     
     def calculate_daily_calories(self, user_prefs):
@@ -175,6 +209,8 @@ class DietPlanSystem:
         suitable_recipes = []
         allergies = preferences.get('allergies', [])
         dietary_preference = preferences.get('dietary_preference', 'none').lower()
+        fitness_goal = preferences.get('dietary_goal', 'maintenance').lower()
+        ingredient_preferences = preferences.get('ingredient_preferences', {})
 
         allergen_map = self.load_allergen_map()
 
@@ -195,19 +231,30 @@ class DietPlanSystem:
                     allergen_ok = False
                     break
 
-            # ✅ Diet filtering (optional - simple version)
-            diet_ok = True
-            if dietary_preference == "vegetarian":
-                diet_ok = all(ingredient not in ["Chicken Breast", "Beef", "Turkey Breast", "Salmon", "Cod", "Shrimp"] for ingredient in ingredients)
-            elif dietary_preference == "vegan":
-                diet_ok = all(ingredient not in ["Chicken Breast", "Beef", "Turkey Breast", "Salmon", "Cod", "Shrimp", "Milk", "Cheese", "Egg", "Greek Yogurt", "Mayonnaise"] for ingredient in ingredients)
+            # ✅ Check diet compatibility
+            diet_ok = self.is_diet_compatible(ingredients, dietary_preference, fitness_goal, nutrition)
 
-            if calories_ok and allergen_ok and diet_ok:
+
+            # ✅ Check ingredient dislikes
+            ingredient_ok = True
+            for ingredient in ingredients:
+                pref = ingredient_preferences.get(ingredient.lower())
+                if pref and pref.lower() == 'dislike':
+                    ingredient_ok = False
+                    break
+
+            # # ✅ Diet filtering (optional - simple version)
+            # diet_ok = True
+            # if dietary_preference == "vegetarian":
+            #     diet_ok = all(ingredient not in ["Chicken Breast", "Beef", "Turkey Breast", "Salmon", "Cod", "Shrimp"] for ingredient in ingredients)
+            # elif dietary_preference == "vegan":
+            #     diet_ok = all(ingredient not in ["Chicken Breast", "Beef", "Turkey Breast", "Salmon", "Cod", "Shrimp", "Milk", "Cheese", "Egg", "Greek Yogurt", "Mayonnaise"] for ingredient in ingredients)
+
+            if calories_ok and allergen_ok and diet_ok and ingredient_ok:
                 recipe_dict = dict(row)
                 recipe_dict['calories'] = recipe_calories
                 suitable_recipes.append(recipe_dict)
-            
-            if not (calories_ok and allergen_ok and diet_ok):
+            else:
                 print(f"Skipping {title}:")
                 if not calories_ok:
                     print(f"  ❌ Calories off target: {recipe_calories} vs {calories_per_meal}")
@@ -215,7 +262,8 @@ class DietPlanSystem:
                     print(f"  ❌ Contains allergens: {[allergen_map.get(i) for i in ingredients if allergen_map.get(i) in allergies]}")
                 if not diet_ok:
                     print(f"  ❌ Does not meet dietary preference: {dietary_preference}")
-
+                if not ingredient_ok:
+                    print(f"  ❌ Contains disliked ingredients: {[i for i in ingredients if ingredient_preferences.get(i.lower()) == 'dislike']}")
 
         return suitable_recipes
 
@@ -236,18 +284,28 @@ class DietPlanSystem:
             title_lower = recipe['title'].lower()
             ingredients_lower = recipe['ingredients'].lower() if 'ingredients' in recipe else ''
             
-            # Simple meal categorization
-            if any(word in title_lower for word in ['breakfast', 'omelette', 'pancake', 'cereal', 'yogurt', 'parfait']):
+            # Enhanced meal categorization using title and ingredients
+            if any(word in title_lower for word in [
+                'breakfast', 'omelette', 'pancake', 'cereal', 'yogurt', 'parfait',
+                'toast', 'scramble', 'oatmeal', 'oats', 'banana', 'muffin', 'smoothie',
+                'burrito', 'walnut', 'honey', 'wrap', 'egg salad']):
                 breakfast_recipes.append(recipe)
-            elif any(word in title_lower for word in ['salad', 'soup', 'sandwich', 'wrap']):
+
+            elif any(word in title_lower for word in [
+                'salad', 'soup', 'sandwich', 'wrap', 'bowl', 'quinoa', 'stir fry', 'lentil']):
                 lunch_recipes.append(recipe)
-            elif any(word in title_lower for word in ['stew', 'pasta', 'rice', 'curry', 'grilled', 'roasted']):
+
+            elif any(word in title_lower for word in [
+                'stew', 'pasta', 'rice', 'curry', 'grilled', 'roasted', 'dinner',
+                'alfredo', 'risotto', 'stuffed', 'baked', 'parmesan']):
                 dinner_recipes.append(recipe)
+
             else:
-                # Default assignment based on calories
-                if recipe['calories'] < 300:
+                # Use calorie-based fallback
+                calories = recipe.get('calories', 0)
+                if calories < 300:
                     breakfast_recipes.append(recipe)
-                elif recipe['calories'] < 500:
+                elif calories < 500:
                     lunch_recipes.append(recipe)
                 else:
                     dinner_recipes.append(recipe)
@@ -306,10 +364,16 @@ class DietPlanSystem:
                     user_id TEXT NOT NULL,
                     plan_name TEXT,
                     description TEXT,
+                    start_date DATE,
+                    end_date DATE,
                     daily_calories INTEGER,
+                    protein_grams INTEGER,
+                    carbs_grams INTEGER,
+                    fat_grams INTEGER,
+                    fiber_grams INTEGER,
                     duration_days INTEGER DEFAULT 7,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     status TEXT DEFAULT 'Active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES User(user_id))''')
         
         # Create MealPlan table
@@ -325,17 +389,17 @@ class DietPlanSystem:
                     FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id),
                     FOREIGN KEY (recipe_id) REFERENCES RecipeLibrary(recipe_id))''')
         
-        # Create NutritionTargets table
-        c.execute('''CREATE TABLE IF NOT EXISTS NutritionTargets
-                    (target_id TEXT PRIMARY KEY,
-                    diet_plan_id TEXT NOT NULL,
-                    daily_calories INTEGER,
-                    protein_grams INTEGER,
-                    carbs_grams INTEGER,
-                    fat_grams INTEGER,
-                    fiber_grams INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
+        # # Create NutritionTargets table
+        # c.execute('''CREATE TABLE IF NOT EXISTS NutritionTargets
+        #             (target_id TEXT PRIMARY KEY,
+        #             diet_plan_id TEXT NOT NULL,
+        #             daily_calories INTEGER,
+        #             protein_grams INTEGER,
+        #             carbs_grams INTEGER,
+        #             fat_grams INTEGER,
+        #             fiber_grams INTEGER,
+        #             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        #             FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
         
         # Create UserDietPlanProgress table
         c.execute('''CREATE TABLE IF NOT EXISTS UserDietPlanProgress
@@ -350,9 +414,56 @@ class DietPlanSystem:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES User(user_id),
                     FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
+
+        # Create UserDietPreference table
+        c.execute('''CREATE TABLE IF NOT EXISTS UserDietPreference
+                    (diet_pref_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    diet_type TEXT,
+                    dietary_goal TEXT,
+                    allergies TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES User(user_id))''')
+
+        # Create Ingredient table
+        c.execute('''CREATE TABLE IF NOT EXISTS Ingredient (
+                    ingredient_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    category TEXT,
+                    nutritional_value TEXT,
+                    allergen_info TEXT)''')
+
+        # Create RecipeLibrary table
+        c.execute('''CREATE TABLE IF NOT EXISTS RecipeLibrary (
+                    recipe_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    ingredients TEXT,
+                    instructions TEXT,
+                    nutrition_info TEXT,
+                    image_url TEXT)''')
+        
+        # Create DietPreferenceIngredient table
+        c.execute('''CREATE TABLE IF NOT EXISTS DietPreferenceIngredient (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    diet_pref_id TEXT NOT NULL,
+                    ingredient_id TEXT NOT NULL,
+                    preference_type TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (diet_pref_id) REFERENCES UserDietPreference(diet_pref_id),
+                    FOREIGN KEY (ingredient_id) REFERENCES Ingredient(ingredient_id))''')
+        
+        # Indexes for performance
+        c.execute('CREATE INDEX IF NOT EXISTS idx_diet_plan_user ON DietPlan(user_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_meal_plan_diet ON MealPlan(diet_plan_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_progress_user_date ON UserDietPlanProgress(user_id, date)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_progress_diet_plan ON UserDietPlanProgress(diet_plan_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_diet_pref_user ON UserDietPreference(user_id)')
         
         conn.commit()
         conn.close()
+    
 
 
 # API Endpoints Functions (to be registered with Flask app)
@@ -439,41 +550,58 @@ def setup_diet_plan_routes(app, diet_system):
 
             # Mark existing ongoing plan as replaced
             c.execute("""
-                SELECT * FROM UserDietPlan 
-                WHERE user_id = ? AND status = 'Ongoing'
+                SELECT * FROM DietPlan 
+                WHERE user_id = ? AND status = 'Active'
             """, (user_id,))
             existing_plan = c.fetchone()
 
             if existing_plan:
                 old_diet_plan_id = existing_plan['diet_plan_id']
                 
-                # Update UserDietPlan status and end_date
+                # Update DietPlan status and end_date
                 c.execute("""
-                    UPDATE UserDietPlan 
-                    SET status = 'Replaced', end_date = ?
+                    UPDATE DietPlan 
+                    SET status = 'Archived', end_date = ?
                     WHERE user_id = ? AND diet_plan_id = ?
                 """, (date.today(), user_id, old_diet_plan_id))
 
-                # Update DietPlan status as well
-                c.execute("""
-                    UPDATE DietPlan 
-                    SET status = 'Replaced'
-                    WHERE diet_plan_id = ?
-                """, (old_diet_plan_id,))
+                # # Update DietPlan status as well
+                # c.execute("""
+                #     UPDATE DietPlan 
+                #     SET status = 'Replaced'
+                #     WHERE diet_plan_id = ?
+                # """, (old_diet_plan_id,))
+
+            # Determine plan name and description based on dietary preferences
+            goal = user_prefs.get('dietary_goal', 'Healthy Lifestyle')
+            diet_type = user_prefs.get('dietary_preference', 'General')
+
+            # Customize plan name
+            plan_name = f"{diet_type.title()} - {goal.title()} Plan"
+
+            # Customize description
+            description = f"A personalized {duration_days}-day diet plan for a {diet_type.lower()} diet with goal: {goal.lower()}."
+
+            start_date = date.today()
+            end_date = start_date + timedelta(days=duration_days)
+
+            protein_target = int(daily_calories * 0.25 / 4)  # 25% of calories from protein
+            carbs_target = int(daily_calories * 0.45 / 4)    # 45% of calories from carbs
+            fat_target = int(daily_calories * 0.30 / 9)      # 30% of calories from fat
 
             # Insert into DietPlan
             c.execute("""
-                INSERT INTO DietPlan (diet_plan_id, user_id, plan_name, description, daily_calories, duration_days, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'Active')
-            """, (diet_plan_id, user_id, plan_name, f"Personalized {duration_days}-day diet plan", daily_calories, duration_days))
+                INSERT INTO DietPlan (diet_plan_id, user_id, plan_name, description, start_date, end_date, daily_calories, protein_grams, carbs_grams, fat_grams, fiber_grams, duration_days, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (diet_plan_id, user_id, plan_name, description, start_date, end_date, daily_calories, protein_target, carbs_target, fat_target, 25, duration_days, 'Active', date.today()))
 
-            # Insert into UserDietPlan
-            start_date = date.today()
-            end_date = start_date + timedelta(days=duration_days)
-            c.execute("""
-                INSERT INTO UserDietPlan (user_id, diet_plan_id, start_date, end_date, status)
-                VALUES (?, ?, ?, ?, 'Ongoing')
-            """, (user_id, diet_plan_id, start_date, end_date))
+            # # Insert into UserDietPlan
+            # start_date = date.today()
+            # end_date = start_date + timedelta(days=duration_days)
+            # c.execute("""
+            #     INSERT INTO UserDietPlan (user_id, diet_plan_id, start_date, end_date, status)
+            #     VALUES (?, ?, ?, ?, 'Ongoing')
+            # """, (user_id, diet_plan_id, start_date, end_date))
             
             # Insert meals
             for i, meal in enumerate(meal_plan):
@@ -486,16 +614,10 @@ def setup_diet_plan_routes(app, diet_system):
                     meal['recipe']['recipe_id'], meal['recipe']['calories']
                 ))
             
-            # Calculate and save nutrition targets
-            target_id = f"NT{diet_plan_id[3:]}"
-            protein_target = int(daily_calories * 0.25 / 4)  # 25% of calories from protein
-            carbs_target = int(daily_calories * 0.45 / 4)    # 45% of calories from carbs
-            fat_target = int(daily_calories * 0.30 / 9)      # 30% of calories from fat
-            
-            c.execute("""
-                INSERT INTO NutritionTargets (target_id, diet_plan_id, daily_calories, protein_grams, carbs_grams, fat_grams, fiber_grams)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (target_id, diet_plan_id, daily_calories, protein_target, carbs_target, fat_target, 25))
+            # c.execute("""
+            #     INSERT INTO NutritionTargets (target_id, diet_plan_id, daily_calories, protein_grams, carbs_grams, fat_grams, fiber_grams)
+            #     VALUES (?, ?, ?, ?, ?, ?, ?)
+            # """, (target_id, diet_plan_id, daily_calories, protein_target, carbs_target, fat_target, 25))
             
             conn.commit()
             conn.close()
@@ -552,14 +674,26 @@ def setup_diet_plan_routes(app, diet_system):
             c = conn.cursor()
             
             c.execute("""
-                SELECT dp.*, udp.start_date, udp.end_date, udp.status AS user_status,
-                    nt.protein_grams, nt.carbs_grams, nt.fat_grams, nt.fiber_grams
-                FROM DietPlan dp
-                JOIN UserDietPlan udp ON dp.diet_plan_id = udp.diet_plan_id AND dp.user_id = udp.user_id
-                LEFT JOIN NutritionTargets nt ON dp.diet_plan_id = nt.diet_plan_id
-                WHERE dp.user_id = ?
-                ORDER BY udp.start_date DESC
+                SELECT 
+                    diet_plan_id,
+                    user_id,
+                    plan_name,
+                    description,
+                    start_date,
+                    end_date,
+                    daily_calories,
+                    protein_grams,
+                    carbs_grams,
+                    fat_grams,
+                    fiber_grams,
+                    duration_days,
+                    status AS user_status,
+                    created_at
+                FROM DietPlan
+                WHERE user_id = ?
+                ORDER BY start_date DESC
             """, (user_id,))
+
             
             plans = []
             for row in c.fetchall():
@@ -585,20 +719,25 @@ def setup_diet_plan_routes(app, diet_system):
             
             # Get diet plan info
             c.execute("""
-            SELECT 
-                dp.*, 
-                udp.start_date, 
-                udp.end_date, 
-                udp.status AS user_status, 
-                nt.protein_grams, 
-                nt.carbs_grams, 
-                nt.fat_grams, 
-                nt.fiber_grams
-            FROM DietPlan dp
-            LEFT JOIN NutritionTargets nt ON dp.diet_plan_id = nt.diet_plan_id
-            LEFT JOIN UserDietPlan udp ON dp.diet_plan_id = udp.diet_plan_id AND dp.user_id = udp.user_id
-            WHERE dp.diet_plan_id = ?
-        """, (diet_plan_id,))
+                SELECT 
+                    diet_plan_id,
+                    user_id,
+                    plan_name,
+                    description,
+                    start_date,
+                    end_date,
+                    status AS user_status,
+                    daily_calories,
+                    protein_grams,
+                    carbs_grams,
+                    fat_grams,
+                    fiber_grams,
+                    duration_days,
+                    created_at
+                FROM DietPlan
+                WHERE diet_plan_id = ?
+            """, (diet_plan_id,))
+
             
             plan_info = c.fetchone()
             if not plan_info:
@@ -666,6 +805,7 @@ def setup_diet_plan_routes(app, diet_system):
             existing = c.fetchone()
             
             if existing:
+                diet_pref_id = existing['diet_pref_id']
                 # Update existing preferences
                 update_fields = []
                 update_values = []
@@ -694,11 +834,33 @@ def setup_diet_plan_routes(app, diet_system):
                 # Create new preferences
                 diet_pref_id = diet_system.generate_diet_pref_id()
                 c.execute("""
-                    INSERT INTO UserDietPreference (diet_pref_id, user_id, diet_type, dietary_goal, allergies, calories)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO UserDietPreference (diet_pref_id, user_id, diet_type, dietary_goal, allergies)
+                    VALUES (?, ?, ?, ?, ?)
                 """, (diet_pref_id, user_id, data.get('diet_type'), data.get('dietary_goal'), 
-                      data.get('allergies'), data.get('calories_target')))
-            
+                      data.get('allergies')))
+            # --- Merge: Clear old ingredient preferences and insert new ones ---
+            c.execute("DELETE FROM DietPreferenceIngredient WHERE diet_pref_id = ?", (diet_pref_id,))
+            ingredient_prefs = data.get('ingredient_preferences', [])  # Expecting a list of dicts
+            for pref in ingredient_prefs:
+                ingredient_name = pref.get('ingredient_name')
+                preference_type = pref.get('preference_type')
+
+                # Look up ingredient_id by name
+                c.execute("SELECT ingredient_id FROM Ingredient WHERE LOWER(name) = LOWER(?)", (ingredient_name,))
+                row = c.fetchone()
+
+                if not row:
+                    raise ValueError(f"Ingredient not found: {ingredient_name}")
+
+                ingredient_id = row['ingredient_id']
+
+                # Insert into DietPreferenceIngredient
+                c.execute("""
+                    INSERT INTO DietPreferenceIngredient (diet_pref_id, ingredient_id, preference_type)
+                    VALUES (?, ?, ?)
+                """, (diet_pref_id, ingredient_id, preference_type))
+            # --- End merge ---
+
             conn.commit()
             conn.close()
             
@@ -778,6 +940,25 @@ def setup_diet_plan_routes(app, diet_system):
             
         except Exception as e:
             return jsonify({'error': f'Error retrieving progress: {str(e)}', 'success': False}), 500
+    
+    @app.route('/api/ingredients', methods=['GET'])
+    def get_ingredient_names():
+        """Return a list of all ingredient names for suggestions"""
+        try:
+            conn = diet_system.get_db_connection()
+            c = conn.cursor()
+
+            c.execute("SELECT name FROM Ingredient ORDER BY name ASC")
+            rows = c.fetchall()
+
+            ingredient_names = [row['name'] for row in rows]
+
+            conn.close()
+            return jsonify(ingredient_names), 200
+
+        except Exception as e:
+            return jsonify({'error': f'Failed to fetch ingredients: {str(e)}'}), 500
+
 
 
 # Integration helper function
