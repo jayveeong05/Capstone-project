@@ -13,21 +13,37 @@ class MealPlansPage extends StatefulWidget {
 class _MealPlansPageState extends State<MealPlansPage> {
   final TextEditingController _ingredientController = TextEditingController();
   final List<String> _ingredients = [];
+  List<String> _allIngredientNames = [];
   List<Map<String, dynamic>> _suggestedMeals = [];
   bool _loading = false;
   String? _error;
 
   final String _baseUrl = 'http://10.0.2.2:5000';
 
-  final List<String> _commonIngredients = [
-    'egg', 'chicken', 'rice', 'tomato', 'onion', 'potato', 'cheese', 'milk', 'bread', 'beef', 'carrot', 'spinach', 'garlic', 'pepper', 'fish'
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchAllIngredientNames();
+    _fetchMealSuggestions();
+  }
 
-  void _addIngredient([String? ingredient]) {
-    final value = (ingredient ?? _ingredientController.text).trim().toLowerCase();
-    if (value.isNotEmpty && !_ingredients.contains(value)) {
+  Future<void> _fetchAllIngredientNames() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/api/ingredients'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          _allIngredientNames = List<String>.from(data);
+        });
+      }
+    } catch (e) {}
+  }
+
+  void _addIngredient(String value) {
+    final input = value.trim().toLowerCase();
+    if (input.isNotEmpty && !_ingredients.contains(input)) {
       setState(() {
-        _ingredients.add(value);
+        _ingredients.add(input);
         _ingredientController.clear();
       });
       _fetchMealSuggestions();
@@ -42,13 +58,6 @@ class _MealPlansPageState extends State<MealPlansPage> {
   }
 
   Future<void> _fetchMealSuggestions() async {
-    if (_ingredients.isEmpty) {
-      setState(() {
-        _suggestedMeals = [];
-        _error = null;
-      });
-      return;
-    }
     setState(() {
       _loading = true;
       _error = null;
@@ -63,17 +72,18 @@ class _MealPlansPageState extends State<MealPlansPage> {
         final data = jsonDecode(response.body);
         setState(() {
           _suggestedMeals = List<Map<String, dynamic>>.from(data['meals'] ?? []);
-          _loading = false;
         });
       } else {
         setState(() {
           _error = 'Failed to fetch suggestions.';
-          _loading = false;
         });
       }
     } catch (e) {
       setState(() {
         _error = 'Error: $e';
+      });
+    } finally {
+      setState(() {
         _loading = false;
       });
     }
@@ -91,78 +101,55 @@ class _MealPlansPageState extends State<MealPlansPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Select or enter available ingredients:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Material(
-              elevation: 2,
-              borderRadius: BorderRadius.circular(24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _ingredientController,
-                      decoration: InputDecoration(
-                        hintText: 'e.g. egg, chicken, rice',
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: _ingredientController,
+                        decoration: InputDecoration(
+                          hintText: 'Enter ingredient...',
+                          suffixIcon: PopupMenuButton<String>(
+                            icon: Icon(Icons.arrow_drop_down),
+                            onSelected: (value) {
+                              _ingredientController.text = value;
+                              _addIngredient(value);
+                            },
+                            itemBuilder: (BuildContext context) {
+                              final query = _ingredientController.text.toLowerCase();
+                              final filtered = _allIngredientNames.where((name) => name.toLowerCase().contains(query)).toList();
+                              return filtered.map((name) => PopupMenuItem<String>(
+                                value: name,
+                                child: Text(name),
+                              )).toList();
+                            },
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         ),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        onSubmitted: (value) => _addIngredient(value),
                       ),
-                      onSubmitted: (_) => _addIngredient(),
-                    ),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: CircleAvatar(
-                      backgroundColor: Colors.blueAccent,
-                      child: IconButton(
-                        icon: Icon(Icons.add, color: Colors.white),
-                        onPressed: () => _addIngredient(),
-                      ),
-                    ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: Colors.blueAccent,
+                  child: IconButton(
+                    icon: Icon(Icons.add, color: Colors.white),
+                    onPressed: () => _addIngredient(_ingredientController.text),
                   ),
-                ],
-              ),
+                )
+              ],
             ),
-            const SizedBox(height: 18),
-            Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: ExpansionTile(
-                title: Text("Choose from common ingredients", style: TextStyle(fontWeight: FontWeight.w600)),
-                leading: Icon(Icons.list_alt),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: _commonIngredients.map((ingredient) {
-                        final isSelected = _ingredients.contains(ingredient);
-                        return FilterChip(
-                          label: Text(ingredient),
-                          selected: isSelected,
-                          selectedColor: Colors.blueAccent.withOpacity(0.7),
-                          backgroundColor: Colors.grey[200],
-                          elevation: isSelected ? 4 : 0,
-                          onSelected: (selected) {
-                            if (selected && !isSelected) {
-                              _addIngredient(ingredient);
-                            } else if (!selected && isSelected) {
-                              _removeIngredient(ingredient);
-                            }
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                ],
-              ),
-            ),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               children: _ingredients.map((ingredient) => Chip(
@@ -201,7 +188,7 @@ class _MealPlansPageState extends State<MealPlansPage> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                         side: BorderSide(
-                          color: match > 50 ? Colors.green : Colors.orange,
+                          color: match > 0 ? Colors.green : Colors.grey,
                           width: 1.5,
                         ),
                       ),

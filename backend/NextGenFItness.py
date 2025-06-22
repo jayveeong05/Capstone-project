@@ -1,3 +1,4 @@
+from json import scanner
 from flask import Flask, request, jsonify,send_from_directory
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -663,30 +664,31 @@ def suggest_meals():
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Get ingredient IDs for the provided names
-    if not available_names:
-        return jsonify({'meals': []})
+    # allow fallback to show all meals if no ingredients are provided
+    ingredient_filtering = bool(available_names)
+    available_names_set = set(available_names)
 
     q_marks = ','.join('?' for _ in available_names)
-    c.execute(f"SELECT ingredient_id, ingredient_name FROM Ingredient WHERE lower(ingredient_name) IN ({q_marks})", available_names)
+    c.execute(f"SELECT ingredient_id, name FROM Ingredient WHERE lower(name) IN ({q_marks})", available_names)
     id_map = {row[1].strip().lower(): row[0] for row in c.fetchall()}
     available_ids = set(id_map.values())
 
     # Fetch all ingredient id-name pairs for lookup
-    c.execute("SELECT ingredient_id, ingredient_name FROM Ingredient")
+    c.execute("SELECT ingredient_id, name FROM Ingredient")
     id_to_name = {str(row[0]): row[1] for row in c.fetchall()}
 
     # Fetch all recipes
-    c.execute("SELECT recipe_id, title, description, ingredients, instructions, nutrition_info, created_at FROM RecipeLibrary")
+    c.execute("SELECT recipe_id, title, description, ingredients, instructions, nutrition_info FROM RecipeLibrary")
     recipes = c.fetchall()
 
     suggested_meals = []
     for recipe in recipes:
-        recipe_ids = set(recipe[3].split(','))
-        match_count = len(available_ids & recipe_ids)
-        if match_count > 0:
-            match_percentage = (match_count / len(recipe_ids)) * 100
-            # Convert ingredient IDs to names for display
+        recipe_ingredients = [ing.strip().lower() for ing in recipe[3].split(',')]
+        match_count = len(set(recipe_ingredients) & available_names_set)
+        match_percentage = (match_count / len(recipe_ingredients)) * 100 if recipe_ingredients else 0
+
+        # Always include the meal, but show match % only if filtering
+        if ingredient_filtering or not ingredient_filtering:
             ingredient_names = [id_to_name.get(rid.strip(), rid.strip()) for rid in recipe[3].split(',')]
             suggested_meals.append({
                 'recipe_id': recipe[0],
@@ -695,8 +697,7 @@ def suggest_meals():
                 'ingredients': ', '.join(ingredient_names),
                 'instructions': recipe[4],
                 'nutrition_info': recipe[5],
-                'created_at': recipe[6],
-                'match_percentage': round(match_percentage, 1)
+                'match_percentage': round(match_percentage, 1) if ingredient_filtering else 0
             })
 
     suggested_meals.sort(key=lambda x: x['match_percentage'], reverse=True)

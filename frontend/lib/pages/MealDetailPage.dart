@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 class MealDetailPage extends StatelessWidget {
@@ -17,7 +18,6 @@ class MealDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Hero image or illustration
             Container(
               height: 140,
               decoration: BoxDecoration(
@@ -46,7 +46,6 @@ class MealDetailPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Meal Title
                     Text(
                       meal['title'] ?? '',
                       style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blueAccent),
@@ -79,32 +78,31 @@ class MealDetailPage extends StatelessWidget {
                       title: 'Nutrition Info',
                     ),
                     const SizedBox(height: 10),
-                    // Improved Nutrition Info Row
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _NutritionChip(
                           icon: Icons.local_fire_department,
                           label: 'Calories',
-                          value: _extractNutrition(meal['nutrition_info'], 'Calories'),
+                          value: _extractNutrition(meal['nutrition_info'], 'calories'),
                           color: Colors.deepOrange,
                         ),
                         _NutritionChip(
                           icon: Icons.fitness_center,
                           label: 'Protein',
-                          value: _extractNutrition(meal['nutrition_info'], 'Protein'),
+                          value: _extractNutrition(meal['nutrition_info'], 'protein'),
                           color: Colors.green,
                         ),
                         _NutritionChip(
                           icon: Icons.bubble_chart,
                           label: 'Carbs',
-                          value: _extractNutrition(meal['nutrition_info'], 'Carbs'),
+                          value: _extractNutrition(meal['nutrition_info'], 'carbs'),
                           color: Colors.blue,
                         ),
                         _NutritionChip(
                           icon: Icons.oil_barrel,
                           label: 'Fat',
-                          value: _extractNutrition(meal['nutrition_info'], 'Fat'),
+                          value: _extractNutrition(meal['nutrition_info'], 'fat'),
                           color: Colors.purple,
                         ),
                       ],
@@ -211,10 +209,16 @@ class _NutritionChip extends StatelessWidget {
   }
 }
 
-// Helper function to extract nutrition values from the string
 String _extractNutrition(String? info, String key) {
   if (info == null) return '-';
-  final regex = RegExp('$key: *([\\d.]+\\w*)', caseSensitive: false);
-  final match = regex.firstMatch(info);
-  return match != null ? match.group(1)! : '-';
+  try {
+    final Map<String, dynamic> nutrition = jsonDecode(info);
+    final lowerKey = key.toLowerCase();
+    if (nutrition.containsKey(lowerKey)) {
+      return '${nutrition[lowerKey]}';
+    }
+  } catch (e) {
+    return '-';
+  }
+  return '-';
 }
