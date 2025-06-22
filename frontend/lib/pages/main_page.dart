@@ -262,45 +262,32 @@ Future<void> _logout() async {
 
 void _showNotifications(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
-  final today = DateTime.now();
-  final todayStr = "${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
-
-  // 🚫 Check if today's reminder was already confirmed
-  final lastChecked = prefs.getString('last_checked_reminder');
-  if (lastChecked == todayStr) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("✅ All workouts completed! No pending exercises."),
-            duration: Duration(seconds: 3),
-          ),
-        );
-        return;
-  }
-
   final userId = prefs.getInt('user_id');
   if (userId == null) return;
-
   final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+  final response = await http.get(
+    Uri.parse('http://10.0.2.2:5000/notifications/$formattedUserId'),
+  );
 
-  // 1. Get user's workout plans
-  final planResponse = await http.get(Uri.parse('http://10.0.2.2:5000/get-plans/$formattedUserId'));
-  if (planResponse.statusCode != 200) return;
+  if (response.statusCode != 200) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('❌ Failed to fetch notifications.')),
+    );
+    return;
+  }
 
-  final plans = json.decode(planResponse.body)['plans'];
-  if (plans.isEmpty) return;
+  final List<dynamic> notifications = json.decode(response.body);
 
-  final int latestPlanId = plans.last['plan_id'];
+  // Filter to show only unchecked notifications
+  final List<dynamic> unchecked = notifications.where((n) => n['checked'] == 0).toList();
 
-  // 2. Check if there's a workout for today
-  final workoutResponse = await http.get(Uri.parse(
-    'http://10.0.2.2:5000/get-plan-date/$latestPlanId/$todayStr'
-  ));
+  if (unchecked.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("🎉 No new notifications.")),
+    );
+    return;
+  }
 
-  if (workoutResponse.statusCode != 200) return;
-  final exercises = json.decode(workoutResponse.body)['exercises'];
-  if (exercises.isEmpty) return;
-
-  // ✅ 3. Show notification
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -313,26 +300,49 @@ void _showNotifications(BuildContext context) async {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Today\'s Workout Reminder 💪',
+              '🔔 Your Notifications',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            ...exercises.map((ex) => Text('• ${ex['name']}')),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: () {
-                // ✅ Save that user checked today's reminder
-                List<String> doneDates = prefs.getStringList('checked_reminder_dates') ?? [];
-                if (!doneDates.contains(todayStr)) {
-                  doneDates.add(todayStr);
-                  prefs.setStringList('checked_reminder_dates', doneDates);
-                }
-
-                Navigator.pop(context);
-              },
-              icon: const Icon(Icons.check),
-              label: const Text("Done"),
-            ),
+            ...unchecked.map<Widget>((notif) {
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                child: ListTile(
+                  leading: Icon(
+                    notif['type'] == 'daily reminder'
+                        ? Icons.fitness_center
+                        : Icons.notifications_active,
+                    color: Colors.orangeAccent,
+                  ),
+                  title: Text(notif['type'].toString().toUpperCase()),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (notif['details'] != null)
+                        Text(notif['details'], style: const TextStyle(fontSize: 14)),
+                      Text("📅 ${notif['created_at']}"),
+                    ],
+                  ),
+                  trailing: ElevatedButton(
+                    onPressed: () async {
+                      final res = await http.post(
+                        Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
+                      );
+                      if (res.statusCode == 200) {
+                        Navigator.pop(context); // Close modal
+                        _showNotifications(context); // Refresh with updated state
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("❌ Failed to mark as checked")),
+                        );
+                      }
+                    },
+                    child: const Text("Check"),
+                  ),
+                ),
+              );
+            }).toList(),
           ],
         ),
       );

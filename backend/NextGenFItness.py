@@ -66,7 +66,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('backend/NextGenFitness.db')
+    conn = sqlite3.connect('NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -372,7 +372,6 @@ def login():
         conn.close()
         return jsonify({'error': 'Invalid username or password'}), 401
 
-
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json()
@@ -419,7 +418,6 @@ def reset_password():
         return jsonify({'error': 'Internal server error during password update'}), 500
     finally:
         conn.close()
-
 
 # NEW ENDPOINT: Reset password from profile page (requires current password verification)
 @app.route('/api/profile/reset-password', methods=['POST'])
@@ -481,7 +479,6 @@ def profile_reset_password():
     finally:
         if conn:
             conn.close()
-
 
 @app.route('/profile', methods=['POST'])
 def save_profile():
@@ -2132,6 +2129,171 @@ def enable_system():
     finally:
         if conn:
             conn.close()
+
+#notifications
+@app.route('/notifications/add', methods=['POST'])
+def add_notification():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    plan_id = data.get('plan_id')
+    notif_type = data.get('type')
+    details = data.get('details')
+
+    if not user_id or not notif_type or not details:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO notifications (user_id, plan_id, type, details, checked, created_at)
+        VALUES (?, ?, ?, ?, 0, datetime('now'))
+    """, (user_id, plan_id, notif_type, details))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Notification added successfully'}), 201
+
+@app.route('/notifications/<user_id>', methods=['GET'])
+def get_notifications(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT notification_id, user_id, plan_id, type, created_at, checked, details 
+        FROM notifications 
+        WHERE user_id = ? 
+        ORDER BY created_at DESC
+    """, (user_id,))
+    rows = cursor.fetchall()
+    print(f"Fetched notifications for user {user_id}: {rows}")
+    conn.close()
+    notifications = [{
+        "notification_id": row[0],
+        "user_id": row[1],
+        "plan_id": row[2],
+        "type": row[3],
+        "created_at": row[4],
+        "checked": row[5],
+        "details": row[6]  # ✅ Include the message body
+    } for row in rows]
+    return jsonify(notifications)
+
+@app.route('/notifications/check/<int:notification_id>', methods=['POST'])
+def mark_notification_checked(notification_id):
+    conn = get_db_connection()
+    conn.execute("""
+        UPDATE notifications
+        SET checked = 1
+        WHERE notification_id  = ?
+    """, (notification_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Notification marked as checked'})
+
+#daily reminder helper for exercise
+def insert_daily_reminder_if_due(user_id, plan_id, reminder_text):
+    conn = get_db_connection()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # Check if a reminder for today already exists
+    check = conn.execute("""
+        SELECT 1 FROM notifications
+        WHERE user_id = ? AND plan_id = ? AND DATE(created_at) = ? AND type = 'daily reminder'
+    """, (user_id, plan_id, today)).fetchone()
+
+    if not check:
+        conn.execute("""
+            INSERT INTO notifications (user_id, plan_id, type, created_at, checked)
+            VALUES (?, ?, 'daily reminder', datetime('now'), 0)
+        """, (user_id, plan_id))
+        conn.commit()
+
+    conn.close()
+
+#admin send notifications
+@app.route('/admin/send-notification', methods=['POST'])
+def send_admin_notification():
+    data = request.get_json()
+    notif_type = data.get('type')
+    details = data.get('details')
+
+    if notif_type not in ['system update', 'system maintenance'] or not details:
+        return jsonify({"error": "Invalid input"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get all users with role = 1 (normal users)
+    users = cursor.execute("SELECT user_id FROM User WHERE role = 1").fetchall()
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    for user in users:
+        cursor.execute("""
+            INSERT INTO notifications (user_id, plan_id, type, details, created_at, checked)
+            VALUES (?, NULL, ?, ?, ?, 0)
+        """, (user['user_id'], notif_type, details, now))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": f"Notification sent to {len(users)} users."})
+
+@app.route('/admin/feedbacks', methods=['GET'])
+def get_all_feedbacks():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Feedback WHERE status IS NULL OR status != 'Responded'")
+    rows = cursor.fetchall()
+    conn.close()
+
+    feedbacks = [{
+        "feedback_id": row["feedback_id"],
+        "user_id": row["user_id"],
+        "submitted_at": row["submitted_at"],
+        "category": row["category"],
+        "feedback_text": row["feedback_text"]
+    } for row in rows]
+    return jsonify(feedbacks)
+
+@app.route('/admin/respond-feedback', methods=['POST'])
+def respond_to_feedback():
+    data = request.get_json()
+    feedback_id = data.get('feedback_id')
+    user_id = data.get('user_id')
+    response_text = data.get('response_text')
+
+    if not all([feedback_id, user_id, response_text]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # ✅ 1. Insert or Replace into FeedbackResponse
+    cursor.execute("""
+        INSERT OR REPLACE INTO FeedbackResponse 
+        (feedback_id, user_id, response_text, response_date)
+        VALUES (?, ?, ?, datetime('now'))
+    """, (feedback_id, user_id, response_text))
+
+    # ✅ 2. Update status of Feedback
+    cursor.execute("""
+        UPDATE Feedback
+        SET status = 'Responded'
+        WHERE feedback_id = ?
+    """, (feedback_id,))
+
+    # ✅ 3. Insert into Notifications table
+    notification_details = f"Admin responded to your feedback (ID: {feedback_id}): {response_text}"
+    cursor.execute("""
+        INSERT INTO notifications (user_id, plan_id, type, details, checked, created_at)
+        VALUES (?, NULL, ?, ?, 0, datetime('now'))
+    """, (user_id, "Feedback Response", notification_details))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Feedback response and notification added.'}), 201
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('./backend/temp', exist_ok=True)

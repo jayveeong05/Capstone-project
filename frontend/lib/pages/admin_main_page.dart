@@ -7,6 +7,9 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'fitness_page_management.dart';
 import 'package:intl/intl.dart';
+import 'admin_send_notification.dart';
+import 'admin_respond.dart';
+
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -491,7 +494,10 @@ Future<void> _toggleSystemStatus(bool disable) async {
                   const SizedBox(height: 16),
                   _buildHierarchyModuleCard('Feedback Management', Icons.feedback, Colors.green, [
                     {'name': 'Feedback Overview', 'onTap': () => Navigator.pushNamed(context, '/admin_feedback_overview')},
-                    {'name': 'Feedback Engagement', 'onTap': () => _showFeatureComingSoon('Feedback Engagement')},
+                    {'name': 'Feedback Engagement', 'onTap': () =>Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => AdminRespondPage()),
+                      ),},
                   ]),
 
                   const SizedBox(height: 24),
@@ -515,7 +521,10 @@ Future<void> _toggleSystemStatus(bool disable) async {
                   const SizedBox(height: 16),
                   _buildHierarchyModuleCard('System Settings', Icons.settings, Colors.orange, [
                     {'name': 'Access Control Configuration', 'onTap': _showAccessControlDialog},
-                    {'name': 'System Notifications', 'onTap': () => _showFeatureComingSoon('System Notifications')},
+                    {'name': 'System Notifications', 'onTap': () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => AdminSendNotificationPage()),
+                      ),},
                   ]),
                   const SizedBox(height: 24),
                 ],
