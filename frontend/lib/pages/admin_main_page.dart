@@ -424,8 +424,138 @@ Future<void> _toggleSystemStatus(bool disable) async {
     );
   }
 
+  Widget _buildDashboardContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Welcome, $_username', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 24),
+
+          const Text('System Overview', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.0,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            children: [
+              _adminOverviewCard(Icons.people, 'Total Users', '$_totalUsers', Colors.blue),
+              _adminOverviewCard(Icons.person, 'Active Users', '$_activeUsers', Colors.green),
+              _adminOverviewCard(Icons.feedback, 'Pending Feedbacks', '$_pendingFeedbacks', Colors.orange),
+              _adminOverviewCard(Icons.bar_chart, 'Reports Generated', '$_reportsGenerated', Colors.purple),
+            ],
+          ),
+          const SizedBox(height: 32),
+
+          const Text('User Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _buildHierarchyModuleCard('User Management', Icons.manage_accounts, Colors.blue, [
+            {
+              'name': 'Registered User Overview',
+              'onTap': () => Navigator.pushNamed(context, '/admin_registered_user_overview')
+            },
+            {
+              'name': 'User Activity Monitoring',
+              'onTap': () => Navigator.pushNamed(context, '/admin_user_activity_monitoring')
+            },
+          ]),
+
+          const SizedBox(height: 24),
+          const Text('Content Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _buildHierarchyModuleCard('Content Management', Icons.dashboard_customize, Colors.teal, [
+            {
+              'name': 'Exercise Library Management',
+              'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => FitnessPageManagementPage()),
+              ),
+            },
+            {'name': 'Recipe Library Management', 'onTap': () => _showFeatureComingSoon('Recipe Library Management')},
+          ]),
+
+          const SizedBox(height: 24),
+          const Text('Feedback Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _buildHierarchyModuleCard('Feedback Management', Icons.feedback, Colors.green, [
+            {'name': 'Feedback Overview', 'onTap': () => Navigator.pushNamed(context, '/admin_feedback_overview')},
+            {'name': 'Feedback Engagement', 'onTap': () =>Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AdminRespondPage()),
+              ),},
+          ]),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Data Analytic and Report', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _buildHierarchyModuleCard('Data Analytic and Report', Icons.analytics, Colors.purple, [
+            {
+              'name': 'User Engagement Data Analytics',
+              'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UserEngagementAnalyticsPage()),
+              ),
+            },
+            {'name': 'User Fitness Progress Data Analytics', 'onTap': () => _showFeatureComingSoon('User Fitness Progress Data Analytics')},
+            {'name': 'User Dietary Habit Data Analytics', 'onTap': () => _showFeatureComingSoon('User Dietary Habit Data Analytics')},
+            {'name': 'Report Generation', 'onTap': () => _showFeatureComingSoon('Report Generation')},
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('System Settings', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _buildHierarchyModuleCard('System Settings', Icons.settings, Colors.orange, [
+            {'name': 'Access Control Configuration', 'onTap': _showAccessControlDialog},
+            {'name': 'System Notifications', 'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AdminSendNotificationPage()),
+              ),},
+          ]),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    Widget currentBody;
+    switch (_selectedIndex) {
+      case 0:
+        currentBody = _buildDashboardContent();
+        break;
+      case 1:
+        currentBody = _buildAnalyticsContent();
+        break;
+      case 2:
+        currentBody = _buildSettingsContent();
+        break;
+      default:
+        currentBody = _buildDashboardContent(); // Fallback to dashboard
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin Dashboard'),
@@ -436,100 +566,7 @@ Future<void> _toggleSystemStatus(bool disable) async {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Welcome, $_username', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 24),
-
-                  const Text('System Overview', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    childAspectRatio: 1.0,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    children: [
-                      _adminOverviewCard(Icons.people, 'Total Users', '$_totalUsers', Colors.blue),
-                      _adminOverviewCard(Icons.person, 'Active Users', '$_activeUsers', Colors.green),
-                      _adminOverviewCard(Icons.feedback, 'Pending Feedbacks', '$_pendingFeedbacks', Colors.orange),
-                      _adminOverviewCard(Icons.bar_chart, 'Reports Generated', '$_reportsGenerated', Colors.purple),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-
-                  const Text('User Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _buildHierarchyModuleCard('User Management', Icons.manage_accounts, Colors.blue, [
-                    {
-                      'name': 'Registered User Overview',
-                      'onTap': () => Navigator.pushNamed(context, '/admin_registered_user_overview')
-                    },
-                    {
-                      'name': 'User Activity Monitoring',
-                      'onTap': () => Navigator.pushNamed(context, '/admin_user_activity_monitoring')
-                    },
-                  ]),
-
-                  const SizedBox(height: 24),
-                  const Text('Content Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _buildHierarchyModuleCard('Content Management', Icons.dashboard_customize, Colors.teal, [
-                    {
-                      'name': 'Exercise Library Management',
-                      'onTap': () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => FitnessPageManagementPage()),
-                      ),
-                    },
-                    {'name': 'Recipe Library Management', 'onTap': () => _showFeatureComingSoon('Recipe Library Management')},
-                  ]),
-
-                  const SizedBox(height: 24),
-                  const Text('Feedback Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _buildHierarchyModuleCard('Feedback Management', Icons.feedback, Colors.green, [
-                    {'name': 'Feedback Overview', 'onTap': () => Navigator.pushNamed(context, '/admin_feedback_overview')},
-                    {'name': 'Feedback Engagement', 'onTap': () =>Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => AdminRespondPage()),
-                      ),},
-                  ]),
-
-                  const SizedBox(height: 24),
-                  const Text('Data Analytic and Report', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _buildHierarchyModuleCard('Data Analytic and Report', Icons.analytics, Colors.purple, [
-                    {
-                      'name': 'User Engagement Data Analytics',
-                      'onTap': () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const UserEngagementAnalyticsPage()),
-                      ),
-                    },
-                    {'name': 'User Fitness Progress Data Analytics', 'onTap': () => _showFeatureComingSoon('User Fitness Progress Data Analytics')},
-                    {'name': 'User Dietary Habit Data Analytics', 'onTap': () => _showFeatureComingSoon('User Dietary Habit Data Analytics')},
-                    {'name': 'Report Generation', 'onTap': () => _showFeatureComingSoon('Report Generation')},
-                  ]),
-
-                  const SizedBox(height: 24),
-                  const Text('System Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _buildHierarchyModuleCard('System Settings', Icons.settings, Colors.orange, [
-                    {'name': 'Access Control Configuration', 'onTap': _showAccessControlDialog},
-                    {'name': 'System Notifications', 'onTap': () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => AdminSendNotificationPage()),
-                      ),},
-                  ]),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
+          : currentBody,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
