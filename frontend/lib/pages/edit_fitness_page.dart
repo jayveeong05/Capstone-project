@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'exercise_model.dart';
+import 'package:multi_select_flutter/multi_select_flutter.dart';
 
 class AddOrEditExercisePage extends StatefulWidget {
   final Exercise? exercise;
@@ -19,26 +20,51 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
   File? _image1;
   final ImagePicker _picker = ImagePicker();
 
-  // Controllers
   late TextEditingController nameController;
-  late TextEditingController levelController;
-  late TextEditingController mechanicController;
-  late TextEditingController equipmentController;
-  late TextEditingController primaryMusclesController;
-  late TextEditingController categoryController;
   late TextEditingController instructionsController;
+
+  String? _selectedLevel;
+  String? _selectedMechanic;
+  String? _selectedEquipment;
+  String? _selectedCategory;
+  List<String> _selectedPrimaryMuscles = [];
+
+  final List<String> levels = ['beginner', 'intermediate', 'expert'];
+  final List<String> mechanics = ['null', 'compound', 'isolation'];
+  final List<String> equipments = [
+    'null', 'medicine ball', 'dumbbell', 'body only', 'bands', 'kettlebells',
+    'foam roll', 'cable', 'machine', 'barbell', 'exercise ball', 'e-z curl bar', 'other'
+  ];
+  final List<String> primaryMuscles = [
+    "abdominals", "abductors", "adductors", "biceps", "calves", "chest", "forearms",
+    "glutes", "hamstrings", "lats", "lower back", "middle back", "neck", "quadriceps",
+    "shoulders", "traps", "triceps"
+  ];
+  final List<String> categories = [
+    "powerlifting", "strength", "stretching", "cardio",
+    "olympic weightlifting", "strongman", "plyometrics"
+  ];
 
   @override
   void initState() {
     super.initState();
     final ex = widget.exercise;
     nameController = TextEditingController(text: ex?.name ?? '');
-    levelController = TextEditingController(text: ex?.level ?? '');
-    mechanicController = TextEditingController(text: ex?.mechanic ?? '');
-    equipmentController = TextEditingController(text: ex?.equipment ?? '');
-    primaryMusclesController = TextEditingController(text: ex?.primaryMuscles ?? '');
-    categoryController = TextEditingController(text: ex?.category ?? '');
-    instructionsController = TextEditingController(text: ex?.instructions.join('. ') ?? '');
+    instructionsController = TextEditingController(
+        text: ex != null ? ex.instructions.join('. ') : '');
+
+    _selectedLevel = ex?.level;
+    _selectedMechanic = ex?.mechanic;
+    _selectedEquipment = ex?.equipment;
+    _selectedCategory = ex?.category;
+
+    if (ex?.primaryMuscles != null) {
+      _selectedPrimaryMuscles = ex!.primaryMuscles
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
   }
 
   Future<void> _pickImage(int index) async {
@@ -51,7 +77,8 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
     }
   }
 
-  String? _nullableText(String text) => text.trim().isEmpty ? null : text.trim();
+  String? _nullableText(String? text) =>
+      text == null || text.trim().isEmpty ? null : text.trim();
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
@@ -62,11 +89,11 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
 
     final body = jsonEncode({
       'name': nameController.text.trim(),
-      'level': levelController.text.trim(),
-      'mechanic': _nullableText(mechanicController.text),
-      'equipment': _nullableText(equipmentController.text),
-      'primaryMuscles': _nullableText(primaryMusclesController.text),
-      'category': _nullableText(categoryController.text),
+      'level': _nullableText(_selectedLevel),
+      'mechanic': _nullableText(_selectedMechanic),
+      'equipment': _nullableText(_selectedEquipment),
+      'primaryMuscles': _selectedPrimaryMuscles.join(','),
+      'category': _nullableText(_selectedCategory),
       'instructions': instructionsController.text.trim(),
     });
 
@@ -107,19 +134,29 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
     }
   }
 
-  @override
-  void dispose() {
-    nameController.dispose();
-    levelController.dispose();
-    mechanicController.dispose();
-    equipmentController.dispose();
-    primaryMusclesController.dispose();
-    categoryController.dispose();
-    instructionsController.dispose();
-    super.dispose();
+  Widget _buildDropdown(String label, String? value, List<String> options, ValueChanged<String?> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String>(
+        value: options.contains(value) ? value : null,
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(),
+        ),
+        items: options.map((String val) {
+          return DropdownMenuItem<String>(
+            value: val,
+            child: Text(val),
+          );
+        }).toList(),
+        onChanged: onChanged,
+        validator: (val) => val == null || val.isEmpty ? 'Please select $label' : null,
+      ),
+    );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, {int maxLines = 1, bool isRequired = true}) {
+  Widget _buildTextField(TextEditingController controller, String label,
+      {int maxLines = 1, bool isRequired = true}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
@@ -152,13 +189,29 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
           child: ListView(
             children: [
               _buildTextField(nameController, 'Name'),
-              _buildTextField(levelController, 'Level'),
-              _buildTextField(mechanicController, 'Mechanic', isRequired: false),
-              _buildTextField(equipmentController, 'Equipment', isRequired: false),
-              _buildTextField(primaryMusclesController, 'Primary Muscles', isRequired: false),
-              _buildTextField(categoryController, 'Category'),
+              _buildDropdown('Level', _selectedLevel, levels, (val) => setState(() => _selectedLevel = val)),
+              _buildDropdown('Mechanic', _selectedMechanic, mechanics, (val) => setState(() => _selectedMechanic = val)),
+              _buildDropdown('Equipment', _selectedEquipment, equipments, (val) => setState(() => _selectedEquipment = val)),
+              _buildDropdown('Category', _selectedCategory, categories, (val) => setState(() => _selectedCategory = val)),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: MultiSelectDialogField<String>(
+                  items: primaryMuscles.map((e) => MultiSelectItem(e, e)).toList(),
+                  initialValue: _selectedPrimaryMuscles,
+                  title: const Text("Primary Muscles"),
+                  buttonText: const Text("Select Primary Muscles"),
+                  listType: MultiSelectListType.CHIP,
+                  onConfirm: (values) {
+                    setState(() {
+                      _selectedPrimaryMuscles = values;
+                    });
+                  },
+                  validator: (values) =>
+                      values == null || values.isEmpty ? 'Please select at least one muscle' : null,
+                ),
+              ),
               _buildTextField(instructionsController, 'Instructions (separated by periods)', maxLines: 5),
-              Text("Upload Exercise Images (0.png & 1.png)", style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text("Upload Exercise Images (0.png & 1.png)", style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               Row(
                 children: [

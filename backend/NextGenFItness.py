@@ -860,18 +860,34 @@ def get_plan_date(plan_id, date_str):
 
 @app.route('/add-exercise', methods=['POST'])
 def add_exercise():
-    data = request.json
+    data = request.get_json()
+
+    name = data.get('name')
+    level = data.get('level')
+    mechanic = data.get('mechanic')
+    equipment = data.get('equipment')
+    category = data.get('category')
+    instructions = data.get('instructions')
+    
+    # ✅ Decode the muscles list (already a list in JSON)
+    primary_muscles_list = data.get('primaryMuscles', [])
+    if isinstance(primary_muscles_list, list):
+        primary_muscles_str = json.dumps(primary_muscles_list)  # Save as JSON string
+    else:
+        primary_muscles_str = json.dumps([primary_muscles_list])  # Fallback for single muscle
+
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
+    cursor = conn.cursor()
+    cursor.execute("""
         INSERT INTO Exercise (name, level, mechanic, equipment, primaryMuscles, category, instructions)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (data['name'], data['level'], data['mechanic'], data['equipment'],
-          data['primaryMuscles'], data['category'], data['instructions']))
-    exercise_id = cur.lastrowid
+    """, (name, level, mechanic, equipment, primary_muscles_str, category, instructions))
+    
+    exercise_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return jsonify({'message': 'Exercise added', 'id': exercise_id}), 200
+
+    return jsonify({'message': 'Exercise added successfully', 'id': exercise_id})
 
 #update exercise in plan
 @app.route('/update-exercise-plan', methods=['POST'])
