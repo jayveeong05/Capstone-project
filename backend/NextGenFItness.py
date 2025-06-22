@@ -15,6 +15,7 @@ from PIL import Image
 from food_recognition import FoodRecognition
 import google.generativeai as genai
 from dateutil.relativedelta import relativedelta
+from collections import Counter
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
@@ -743,7 +744,7 @@ def generate_workout_plan():
     primaryMuscle = data.get('primaryMuscle')
     category = data.get('category')
     duration_months = data.get('duration', 3)
-    start_date_str = data.get('start_date')  # optional: e.g. "2025-06-21"
+    start_date_str = data.get('start_date')  # Optional: "2025-06-23"
 
     if user_id.isdigit():
         user_id = f"U{int(user_id):03d}"
@@ -829,29 +830,24 @@ def generate_workout_plan():
 
             plan_by_dates[formatted_date] = plan_by_dates.get(formatted_date, []) + [ex]
 
-    # Create today's reminder if applicable
+    # Create today's reminder if today has exercises in plan
     today_str = datetime.today().strftime("%Y-%m-%d")
-    if start_date.strftime("%Y-%m-%d") == today_str:
-        cur.execute('''
-            SELECT E.name FROM WorkoutPlanExercise W
-            JOIN Exercise E ON E.Exercise_ID = W.Exercise_ID
-            WHERE W.plan_id = ? AND W.date = ?
-        ''', (plan_id, today_str))
-        todays_exercises = cur.fetchall()
+    created_today_reminder = False
 
-        if todays_exercises:
-            exercise_names = [row['name'] for row in todays_exercises]
-            count = len(exercise_names)
-            if count <= 3:
-                exercise_list = ", ".join(exercise_names)
-                message = f"Today's workout: {exercise_list} 🏋️"
-            else:
-                message = f"You have {count} exercises waiting today 💪"
+    print("Generated plan dates:", list(plan_by_dates.keys()))
+    print("Today is:", today_str)
 
+    if today_str in plan_by_dates:
+        for ex in plan_by_dates[today_str]:
+            details = f"Don't forget your workout for plan {plan_id} today! 🏋️‍♀️"
             cur.execute('''
-                INSERT INTO notifications (plan_id, user_id, type, message, created_at, checked)
-                VALUES (?, ?, 'daily reminder', ?, ?, 0)
-            ''', (plan_id, user_id, message, today_str))
+                INSERT INTO notifications (plan_id, user_id, type, details, checked, exercise_id, date)
+                VALUES (?, ?, 'daily reminder', ?, 0, ?, ?)
+            ''', (plan_id, user_id, details, ex['Exercise_ID'], today_str))
+            created_today_reminder = True
+        print(f"✅ Reminder created for today: {today_str}")
+    else:
+        print(f"❌ No exercises scheduled for today ({today_str}) in the plan.")
 
     conn.commit()
     conn.close()
@@ -859,6 +855,7 @@ def generate_workout_plan():
     return jsonify({
         'message': 'Workout plan generated and saved with dates',
         'plan_id': plan_id,
+        'created_today_reminder': created_today_reminder,
         'plan': plan_by_dates
     })
 
@@ -1235,12 +1232,19 @@ def check_workout_progress(plan_id):
 @app.route('/mark-exercise-status/<user_id>', methods=['POST'])
 def mark_exercise_status(user_id):
     data = request.get_json()
-    today = datetime.now().strftime('%Y-%m-%d')
     status_to_mark = data.get('status')  # 'completed' or 'overdue'
     plan_id = data.get('plan_id')
     exercise_id = data.get('exercise_id')
     date_str = data.get('date')  # yyyy-mm-dd
-
+    
+    print("DEBUG mark_exercise_status:")
+    print("user_id:", user_id)
+    print("plan_id:", plan_id)
+    print("exercise_id:", exercise_id)
+    print("date_str:", date_str)
+    print("status:", status_to_mark)
+    if not all([exercise_id, plan_id, date_str, status_to_mark]):
+        return jsonify({'error': 'Missing required fields'}), 400
     if status_to_mark not in ['completed', 'overdue']:
         return jsonify({'error': 'Invalid status'}), 400
 
@@ -1250,7 +1254,7 @@ def mark_exercise_status(user_id):
     # Check if already exists
     cursor.execute('''
         SELECT * FROM ExerciseStatus
-        WHERE user_id = ? AND Exercise_ID = ? AND plan_id = ? AND date = ?
+        WHERE user_id = ? AND exercise_id = ? AND plan_id = ? AND date = ?
     ''', (user_id, exercise_id, plan_id, date_str))
     existing = cursor.fetchone()
 
@@ -1260,7 +1264,7 @@ def mark_exercise_status(user_id):
 
     # Insert status
     cursor.execute('''
-        INSERT INTO ExerciseStatus (user_id, Exercise_ID, plan_id, date, status)
+        INSERT INTO ExerciseStatus (user_id, exercise_id, plan_id, date, status)
         VALUES (?, ?, ?, ?, ?)
     ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
     conn.commit()
@@ -2233,6 +2237,72 @@ def get_user_engagement_analytics():
         if conn:
             conn.close()
 
+#exercise_analytics
+@app.route('/workout-analytics/global', methods=['GET'])
+def global_workout_analytics():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Count total users
+    cur.execute("SELECT COUNT(*) AS total_users FROM User WHERE role = 0")
+    total_users = cur.fetchone()['total_users']
+
+    # Count total workout plans
+    cur.execute("SELECT COUNT(*) AS total_plans FROM WorkoutPlan")
+    total_plans = cur.fetchone()['total_plans']
+
+    # Count completed and overdue exercises
+    cur.execute("SELECT status, COUNT(*) AS count FROM ExerciseStatus GROUP BY status")
+    status_counts = {row['status']: row['count'] for row in cur.fetchall()}
+    completed = status_counts.get('completed', 0)
+    overdue = status_counts.get('overdue', 0)
+
+    # Average progress across all users
+    cur.execute("SELECT plan_id, user_id FROM WorkoutPlan")
+    plans = cur.fetchall()
+    total_progress = 0
+    counted = 0
+
+    for plan in plans:
+        plan_id = plan['plan_id']
+        user_id = plan['user_id']
+
+        cur.execute("SELECT COUNT(*) AS total FROM WorkoutPlanExercise WHERE plan_id = ?", (plan_id,))
+        total_ex = cur.fetchone()['total']
+
+        cur.execute("SELECT COUNT(*) AS done FROM ExerciseStatus WHERE user_id = ? AND plan_id = ? AND status = 'completed'", (user_id, plan_id))
+        done_ex = cur.fetchone()['done']
+
+        if total_ex > 0:
+            progress = (done_ex / total_ex) * 100
+            total_progress += progress
+            counted += 1
+
+    avg_progress = round(total_progress / counted, 1) if counted > 0 else 0
+
+    # Most chosen exercise
+    cur.execute("SELECT Exercise_ID FROM WorkoutPlanExercise")
+    all_ex_ids = [row['Exercise_ID'] for row in cur.fetchall()]
+    most_common = Counter(all_ex_ids).most_common(1)
+
+    most_chosen_exercise = None
+    if most_common:
+        top_ex_id, _ = most_common[0]
+        cur.execute("SELECT name FROM Exercise WHERE Exercise_ID = ?", (top_ex_id,))
+        name_row = cur.fetchone()
+        most_chosen_exercise = name_row['name'] if name_row else None
+
+    conn.close()
+
+    return jsonify({
+        'total_users': total_users,
+        'total_plans': total_plans,
+        'completed_exercises': completed,
+        'overdue_exercises': overdue,
+        'average_progress_percent': avg_progress,
+        'most_chosen_exercise': most_chosen_exercise
+    })
+
 @app.route('/logout', methods=['POST'])
 def logout():
     """
@@ -2354,51 +2424,31 @@ def enable_system():
         if conn:
             conn.close()
 
-#notifications
-@app.route('/notifications/add', methods=['POST'])
-def add_notification():
-    data = request.get_json()
-    user_id = data.get('user_id')
-    plan_id = data.get('plan_id')
-    notif_type = data.get('type')
-    details = data.get('details')
-
-    if not user_id or not notif_type or not details:
-        return jsonify({'error': 'Missing required fields'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO notifications (user_id, plan_id, type, details, checked, created_at)
-        VALUES (?, ?, ?, ?, 0, datetime('now'))
-    """, (user_id, plan_id, notif_type, details))
-    conn.commit()
-    conn.close()
-
-    return jsonify({'message': 'Notification added successfully'}), 201
-
 @app.route('/notifications/<user_id>', methods=['GET'])
 def get_notifications(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT notification_id, user_id, plan_id, type, created_at, checked, details 
+        SELECT notification_id, user_id, plan_id, type, checked, details, exercise_id, date 
         FROM notifications 
         WHERE user_id = ? 
-        ORDER BY created_at DESC
+        ORDER BY date DESC
     """, (user_id,))
     rows = cursor.fetchall()
     print(f"Fetched notifications for user {user_id}: {rows}")
     conn.close()
+
     notifications = [{
         "notification_id": row[0],
         "user_id": row[1],
         "plan_id": row[2],
         "type": row[3],
-        "created_at": row[4],
-        "checked": row[5],
-        "details": row[6]  # ✅ Include the message body
+        "checked": row[4],
+        "details": row[5],
+        "exercise_id": row[6],  # ✅ now included
+        "date": row[7]
     } for row in rows]
+
     return jsonify(notifications)
 
 @app.route('/notifications/check/<int:notification_id>', methods=['POST'])
@@ -2414,51 +2464,12 @@ def mark_notification_checked(notification_id):
 
     return jsonify({'message': 'Notification marked as checked'})
 
-def check_and_insert_daily_reminders(user_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    today = datetime.now().strftime('%Y-%m-%d')
-
-    # 1️⃣ Find all plan_ids with workouts scheduled today for this user
-    cursor.execute("""
-        SELECT DISTINCT wp.plan_id
-        FROM WorkoutPlan wp
-        JOIN WorkoutPlanExercise wpe ON wp.plan_id = wpe.plan_id
-        WHERE wp.user_id = ?
-          AND wpe.date = ?
-    """, (user_id, today))
-    
-    due_plans = cursor.fetchall()
-
-    for row in due_plans:
-        plan_id = row["plan_id"]
-
-        # 2️⃣ Check if a daily reminder has already been sent for this plan and date
-        check = cursor.execute("""
-            SELECT 1 FROM notifications
-            WHERE user_id = ? AND plan_id = ? AND DATE(created_at) = ? AND type = 'daily reminder'
-        """, (user_id, plan_id, today)).fetchone()
-
-        # 3️⃣ If not, insert a reminder
-        if not check:
-            cursor.execute("""
-                INSERT INTO notifications (user_id, plan_id, type, details, created_at, checked)
-                VALUES (?, ?, 'daily reminder', ?, datetime('now'), 0)
-            """, (
-                user_id,
-                plan_id,
-                f"Don't forget your workout for plan {plan_id} today! 🏋️‍♀️"
-            ))
-            print(f"✅ Inserted reminder for plan {plan_id}")
-
-    conn.commit()
-    conn.close()
-
 #check the daily reminders and overdue exercise
 @app.route('/reminders/check/<user_id>', methods=['POST'])
 def check_reminders_route(user_id):
     check_reminders(user_id)
     return jsonify({'status': 'checked'})
+
 def check_reminders(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2517,7 +2528,7 @@ def insert_daily_reminder_if_due(user_id, plan_id):
 
     if not check:
         conn.execute("""
-            INSERT INTO notifications (user_id, plan_id, type, created_at, checked)
+            INSERT INTO notifications (user_id, plan_id, type, date, checked)
             VALUES (?, ?, 'daily reminder', datetime('now'), 0)
         """, (user_id, plan_id))
         conn.commit()
@@ -2543,7 +2554,7 @@ def send_admin_notification():
 
     for user in users:
         cursor.execute("""
-            INSERT INTO notifications (user_id, plan_id, type, details, created_at, checked)
+            INSERT INTO notifications (user_id, plan_id, type, details, date, checked)
             VALUES (?, NULL, ?, ?, ?, 0)
         """, (user['user_id'], notif_type, details, now))
 
@@ -2599,7 +2610,7 @@ def respond_to_feedback():
     # ✅ 3. Insert into Notifications table
     notification_details = f"Admin responded to your feedback (ID: {feedback_id}): {response_text}"
     cursor.execute("""
-        INSERT INTO notifications (user_id, plan_id, type, details, checked, created_at)
+        INSERT INTO notifications (user_id, plan_id, type, details, checked, date)
         VALUES (?, NULL, ?, ?, 0, datetime('now'))
     """, (user_id, "Feedback Response", notification_details))
 

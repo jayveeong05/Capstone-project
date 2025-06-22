@@ -9,7 +9,7 @@ import 'fitness_page_management.dart';
 import 'package:intl/intl.dart';
 import 'admin_send_notification.dart';
 import 'admin_respond.dart';
-
+import 'work_analytics_page.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -510,7 +510,10 @@ Future<void> _toggleSystemStatus(bool disable) async {
                 MaterialPageRoute(builder: (context) => const UserEngagementAnalyticsPage()),
               ),
             },
-            {'name': 'User Fitness Progress Data Analytics', 'onTap': () => _showFeatureComingSoon('User Fitness Progress Data Analytics')},
+            {'name': 'User Fitness Progress Data Analytics', 'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => GlobalDashboard()),
+              ),},
             {'name': 'User Dietary Habit Data Analytics', 'onTap': () => _showFeatureComingSoon('User Dietary Habit Data Analytics')},
             {'name': 'Report Generation', 'onTap': () => _showFeatureComingSoon('Report Generation')},
           ]),

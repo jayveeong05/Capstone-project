@@ -156,9 +156,7 @@ Future<void> _logout() async {
     } else {
       print('❌ No user ID found in SharedPreferences for backend logout logging.');
     }    
-
-
-
+    
     // Show SnackBar before navigating away
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -365,29 +363,59 @@ void _showNotifications(BuildContext context) async {
                     ],
                   ),
                   trailing: ElevatedButton(
-                      onPressed: () async {
-                        final res = await http.post(
-                          Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
-                        );
-
-                        if (res.statusCode == 200) {
-                          // ✅ After successful check, also update the progress
-                          final planId = notif['plan_id'];
-                          if (planId != null) {
-                            await http.post(
-                              Uri.parse('http://10.0.2.2:5000/check_workout_progress/$planId'),
+                        onPressed: () async {
+                          final prefs = await SharedPreferences.getInstance();
+                          final userId = prefs.getInt('user_id');
+                          final exerciseId = notif['exercise_id'];  // <-- make sure this exists
+                          final selectedDate = notif['date'];  
+                          if (userId == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("User ID not found.")),
                             );
+                            return;
                           }
 
-                          Navigator.pop(context); // Close modal
-                          _showNotifications(context); // Refresh with updated state
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("❌ Failed to mark as checked")),
+                          final userIdStr = "U${userId.toString().padLeft(3, '0')}";
+                          // 1. Mark exercise as completed
+                          final markStatusResponse = await http.post(
+                            Uri.parse('http://10.0.2.2:5000/mark-exercise-status/$userIdStr'),
+                            headers: {'Content-Type': 'application/json'},
+                            body: jsonEncode({
+                            "status": "completed",
+                            "plan_id": notif['plan_id'],
+                            "exercise_id": exerciseId,
+                            "date": selectedDate,
+                          }),
                           );
-                        }
-                      },
 
+                          if (markStatusResponse.statusCode == 200) {
+                            // 2. Mark notification as checked
+                            final checkNotifResponse = await http.post(
+                              Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
+                            );
+
+                            if (checkNotifResponse.statusCode == 200) {
+                              // 3. Optionally update overall progress
+                              final planId = notif['plan_id'];
+                              if (planId != null) {
+                                await http.post(
+                                  Uri.parse('http://10.0.2.2:5000/check_workout_progress/$planId'),
+                                );
+                              }
+
+                              Navigator.pop(context); // Close modal
+                              _showNotifications(context); // Refresh
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("❌ Failed to mark notification as checked")),
+                              );
+                            }
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("❌ Failed to mark exercise as completed")),
+                            );
+                          }
+                        },
                       child: const Text("Check"),
                     ),
                   ),

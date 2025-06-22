@@ -15,7 +15,6 @@ class GenerateWorkoutPlanPage extends StatefulWidget {
 }
 
 class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
-  
   String? selectedLevel;
   String? selectedMechanic;
   String? selectedEquipment;
@@ -46,9 +45,11 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
     final userId = prefs.getInt('user_id');
 
     if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("User ID not found. Please log in again.")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("User ID not found. Please log in again.")),
+        );
+      }
       return;
     }
 
@@ -57,7 +58,7 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
       'level': selectedLevel,
       'mechanic': selectedMechanic,
       'equipment': selectedEquipment,
-      'primaryMuscle': selectedMuscle, // ✅ Fixed key name
+      'primaryMuscle': selectedMuscle,
       'category': selectedCategory,
       'duration': durationMonths.toInt(),
     };
@@ -82,48 +83,53 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
         final planId = json['plan_id'];
 
         if (planId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Failed to retrieve plan ID.")),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Failed to retrieve plan ID.")),
+            );
+          }
           return;
         }
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text("Success"),
-          content: Text("Workout plan generated successfully!"),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context); // Close the dialog
-                await Future.delayed(Duration(milliseconds: 100)); // Delay lets UI settle
 
-                if (mounted) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ViewWorkoutPlanPage(planId: planId),
-                    ),
-                  );
-                }
-              },
-              child: Text("OK"),
-            ),
-          ],
-        ),
-      );
+        // ✅ SAFELY handle dialog and navigation using `.then`
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text("Success"),
+            content: Text("Workout plan generated successfully!"),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context, rootNavigator: true).pop();
+                },
+                child: Text("OK"),
+              ),
+            ],
+          ),
+        ).then((_) {
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewWorkoutPlanPage(planId: planId),
+              ),
+            );
+          }
+        });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to generate plan.")),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to generate plan.")),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-      setState(() => _isLoading = false);
-    }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("An error occurred: $e")),
-      );
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("An error occurred: $e")),
+        );
+      }
     }
   }
 
