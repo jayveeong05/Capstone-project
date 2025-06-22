@@ -67,7 +67,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -2583,6 +2583,68 @@ def respond_to_feedback():
     conn.close()
 
     return jsonify({'message': 'Feedback response and notification added.'}), 201
+
+@app.route('/api/profile/<user_id>', methods=['GET'])
+def get_user_profile(user_id):
+    """
+    API endpoint to fetch a user's profile information,
+    including details from User, Profile, and UserDietPreference tables.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Fetch username from User table
+        cursor.execute("SELECT username FROM User WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
+        if not user_data:
+            return jsonify({'error': 'User not found'}), 404
+        username = user_data['username']
+
+        # Fetch profile details from Profile table
+        cursor.execute("""
+            SELECT full_name, age, gender, height, weight, bmi, location, profile_picture
+            FROM Profile
+            WHERE user_id = ?
+        """, (user_id,))
+        profile_data = cursor.fetchone()
+
+        # Fetch diet preferences from UserDietPreference table
+        cursor.execute("""
+            SELECT allergies, dietary_goal
+            FROM UserDietPreference
+            WHERE user_id = ?
+        """, (user_id,))
+        diet_pref_data = cursor.fetchone()
+
+        # Construct the response dictionary
+        response_data = {
+            'user_id': user_id,
+            'username': username,
+            'full_name': profile_data['full_name'] if profile_data else None,
+            'age': profile_data['age'] if profile_data else None,
+            'gender': profile_data['gender'] if profile_data else None,
+            'height': profile_data['height'] if profile_data else None,
+            'weight': profile_data['weight'] if profile_data else None,
+            'bmi': profile_data['bmi'] if profile_data else None,
+            'location': profile_data['location'] if profile_data else None,
+            'profile_picture': profile_data['profile_picture'] if profile_data else None,
+            'allergies': diet_pref_data['allergies'] if diet_pref_data else None,
+            'dietary_goal': diet_pref_data['dietary_goal'] if diet_pref_data else None
+        }
+
+        return jsonify(response_data), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_user_profile: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_user_profile: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
     # Create necessary directories

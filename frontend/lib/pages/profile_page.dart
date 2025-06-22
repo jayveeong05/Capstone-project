@@ -19,9 +19,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _allergiesController = TextEditingController();
-  final TextEditingController _foodPreferencesController = TextEditingController();
   final TextEditingController _fitnessGoalsController = TextEditingController();
-  final TextEditingController _medicalConditionsController = TextEditingController();
   final TextEditingController _feedbackTextController = TextEditingController(); // New feedback controller
   final TextEditingController _currentPasswordController = TextEditingController(); // New
   final TextEditingController _newPasswordController = TextEditingController(); // New
@@ -55,9 +53,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _ageController.dispose();
     _locationController.dispose();
     _allergiesController.dispose();
-    _foodPreferencesController.dispose();
     _fitnessGoalsController.dispose();
-    _medicalConditionsController.dispose();
     _feedbackTextController.dispose(); // Dispose feedback controller
     _currentPasswordController.dispose(); // New
     _newPasswordController.dispose(); // New
@@ -66,51 +62,91 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadProfileData() async {
-    print('Loading profile data...'); // Debug print
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
-      // Safely load all values, converting to string if necessary
-      // This handles cases where any preference might have been
-      // accidentally stored as a different type (e.g., int, bool).
-      var getSafeString = (String key) {
-        var value = prefs.get(key);
-        return value != null ? value.toString() : '';
-      };
-
+      // Load user ID
       var rawUserId = prefs.get('user_id');
       _userId = rawUserId != null ? rawUserId.toString() : null;
-      print('Loaded _userId: $_userId'); // Debug print: Check the loaded user ID
+      
+      // Load username
+      _usernameController.text = prefs.getString('username') ?? 'User';
 
-      _usernameController.text = getSafeString('username') ?? 'User';
-
+      // Load profile data
       _heightController.text = (prefs.getDouble('height')?.toString() ?? '');
       _weightController.text = (prefs.getDouble('weight')?.toString() ?? '');
       _ageController.text = (prefs.getInt('age')?.toString() ?? '');
+      _locationController.text = prefs.getString('location') ?? '';
 
-      _locationController.text = getSafeString('location');
-      _allergiesController.text = getSafeString('allergies');
-      _foodPreferencesController.text = getSafeString('foodPreferences');
-      _fitnessGoalsController.text = getSafeString('fitnessGoals');
-      _medicalConditionsController.text = getSafeString('medicalConditions');
+      // Load dietary preferences
+      _allergiesController.text = prefs.getString('allergies') ?? '';
+      _fitnessGoalsController.text = prefs.getString('dietary_goal') ?? '';
+
       _isLoading = false;
-      print('Profile data loaded. _isLoading set to false.'); // Debug print
     });
+    
+    if (_userId != null) {
+      await _fetchProfileFromBackend(_userId!);
+    }
+  }
+
+  Future<void> _fetchProfileFromBackend(String userId) async {
+    final formattedUserId = _formatUserId(userId);
+    final url = Uri.parse('http://10.0.2.2:5000/api/profile/$formattedUserId');
+    
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _usernameController.text = data['username'] ?? 'User';
+          _heightController.text = (data['height']?.toString() ?? '');
+          _weightController.text = (data['weight']?.toString() ?? '');
+          _ageController.text = (data['age']?.toString() ?? '');
+          _locationController.text = data['location'] ?? '';
+          _allergiesController.text = data['allergies'] ?? '';
+          _fitnessGoalsController.text = data['dietary_goal'] ?? '';
+        });
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setString('username', data['username'] ?? 'User');
+        await prefs.setDouble('height', double.tryParse(data['height']?.toString() ?? '') ?? 0.0);
+        await prefs.setDouble('weight', double.tryParse(data['weight']?.toString() ?? '') ?? 0.0);
+        await prefs.setInt('age', int.tryParse(data['age']?.toString() ?? '') ?? 0);
+        await prefs.setString('location', data['location'] ?? '');
+        await prefs.setString('allergies', data['allergies'] ?? '');
+        await prefs.setString('dietary_goal', data['dietary_goal'] ?? '');
+      } else {
+        _showSnackBar('Failed to load profile data from backend.', Colors.red);
+      }
+    } catch (e) {
+      _showSnackBar('Error fetching profile data: $e', Colors.red);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _formatUserId(String userId) {
+    if (userId.startsWith('U') && userId.length == 4 && int.tryParse(userId.substring(1)) != null) {
+      return userId;
+    }
+    int? userIdInt = int.tryParse(userId);
+    if (userIdInt != null) {
+      return 'U${userIdInt.toString().padLeft(3, '0')}';
+    }
+    return userId; // Fallback
   }
 
   Future<void> _saveProfileData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString('username', _usernameController.text);
     
-    // Save numerical values as their correct types
+    await prefs.setString('username', _usernameController.text);
     await prefs.setDouble('height', double.tryParse(_heightController.text) ?? 0.0);
     await prefs.setDouble('weight', double.tryParse(_weightController.text) ?? 0.0);
     await prefs.setInt('age', int.tryParse(_ageController.text) ?? 0);
-
     await prefs.setString('location', _locationController.text);
     await prefs.setString('allergies', _allergiesController.text);
-    await prefs.setString('foodPreferences', _foodPreferencesController.text);
-    await prefs.setString('fitnessGoals', _fitnessGoalsController.text);
-    await prefs.setString('medicalConditions', _medicalConditionsController.text);
+    await prefs.setString('dietary_goal', _fitnessGoalsController.text);
 
     setState(() => _isEditing = false);
 
@@ -126,9 +162,9 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _submitFeedback() async {
-    if (_userId == null || _userId!.isEmpty) { // Added check for empty userId
+    if (_userId == null || _userId!.isEmpty) {
       _showSnackBar('User not logged in or user ID is missing.', Colors.red);
-      print('Feedback submission failed: _userId is null or empty.'); // Debug print
+      print('Feedback submission failed: _userId is null or empty.');
       return;
     }
     if (_feedbackTextController.text.isEmpty) {
@@ -140,32 +176,26 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
 
-    // --- MODIFICATION STARTS HERE ---
-    // Ensure the user ID is formatted with 'U' and padded to 3 digits
     String formattedUserId = _userId!;
     if (!formattedUserId.startsWith('U')) {
-      // Attempt to parse the numeric part and format it
       int? userIdInt = int.tryParse(formattedUserId);
       if (userIdInt != null) {
         formattedUserId = 'U${userIdInt.toString().padLeft(3, '0')}';
       } else {
-        // Fallback if parsing fails, or handle as an error
         print('Warning: _userId could not be parsed as an integer for formatting: $_userId');
-        // You might want to show an error to the user or stop submission here
         _showSnackBar('User ID is in an unexpected format. Cannot submit feedback.', Colors.red);
         return;
       }
     }
-    // --- MODIFICATION ENDS HERE ---
 
-    final url = Uri.parse('http://10.0.2.2:5000/api/feedback'); // REMINDER: Replace with your actual backend URL
-    print('Submitting feedback with user_id: $formattedUserId, category: $_selectedFeedbackCategory, text: ${_feedbackTextController.text}'); // Debug print: Check data being sent
+    final url = Uri.parse('http://10.0.2.2:5000/api/feedback');
+    print('Submitting feedback with user_id: $formattedUserId, category: $_selectedFeedbackCategory, text: ${_feedbackTextController.text}');
     try {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'user_id': formattedUserId, // Use the formattedUserId here
+          'user_id': formattedUserId,
           'category': _selectedFeedbackCategory,
           'feedback_text': _feedbackTextController.text,
         }),
@@ -177,15 +207,15 @@ class _ProfilePageState extends State<ProfilePage> {
         setState(() {
           _selectedFeedbackCategory = null;
         });
-        print('Feedback submitted successfully. Response: ${response.body}'); // Debug print
+        print('Feedback submitted successfully. Response: ${response.body}');
       } else {
         final errorData = json.decode(response.body);
         _showSnackBar('Failed to submit feedback: ${errorData['error']}', Colors.red);
-        print('Feedback submission failed. Status: ${response.statusCode}, Error: ${errorData['error']}'); // Debug print
+        print('Feedback submission failed. Status: ${response.statusCode}, Error: ${errorData['error']}');
       }
     } catch (e) {
       _showSnackBar('An error occurred: $e', Colors.red);
-      print('Caught exception during feedback submission: $e'); // Debug print
+      print('Caught exception during feedback submission: $e');
     }
   }
 
@@ -223,7 +253,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // New function to show password reset dialog
   Future<void> _showResetPasswordDialog() async {
     _currentPasswordController.clear();
     _newPasswordController.clear();
@@ -231,7 +260,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return showDialog<void>(
       context: context,
-      barrierDismissible: false, // User must tap button to close
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Reset Password'),
@@ -276,15 +305,12 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // New function to handle password reset logic
   Future<void> _resetPassword() async {
     if (_userId == null || _userId!.isEmpty) {
       _showSnackBar('User not logged in or user ID is missing.', Colors.red);
       return;
     }
 
-    // --- ADDED MODIFICATION HERE ---
-    // Ensure the user ID is formatted with 'U' and padded to 3 digits
     String formattedUserId = _userId!;
     if (!formattedUserId.startsWith('U')) {
       int? userIdInt = int.tryParse(formattedUserId);
@@ -296,7 +322,6 @@ class _ProfilePageState extends State<ProfilePage> {
         return;
       }
     }
-    // --- END ADDED MODIFICATION ---
 
     final String currentPassword = _currentPasswordController.text;
     final String newPassword = _newPasswordController.text;
@@ -317,7 +342,6 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
 
-    // UPDATED URL: Pointing to the new backend endpoint for profile password reset
     final url = Uri.parse('http://10.0.2.2:5000/api/profile/reset-password');
 
     try {
@@ -325,7 +349,7 @@ class _ProfilePageState extends State<ProfilePage> {
         url,
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'user_id': formattedUserId, // Use the formattedUserId here
+          'user_id': formattedUserId,
           'current_password': currentPassword,
           'new_password': newPassword,
         }),
@@ -335,7 +359,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (response.statusCode == 200) {
         _showSnackBar('Password reset successfully!', Colors.green);
-        Navigator.of(context).pop(); // Close the dialog
+        Navigator.of(context).pop();
       } else {
         _showSnackBar('Failed to reset password: ${responseData['error']}', Colors.red);
       }
@@ -440,11 +464,13 @@ class _ProfilePageState extends State<ProfilePage> {
                     title: "Dietary & Health Details",
                     icon: Icons.health_and_safety_outlined,
                     children: [
-                      _buildEditableField('Allergies', _allergiesController, hint: 'Peanuts, Dairy, etc.'),
-                      const SizedBox(height: 16),
-                      _buildEditableField('Food Preferences', _foodPreferencesController, hint: 'Vegetarian, Keto, etc.'),
-                      const SizedBox(height: 16),
-                      _buildEditableField('Medical Conditions', _medicalConditionsController, hint: 'Diabetes, Hypertension, etc.', maxLines: 2),
+                      _buildEditableField(
+                        'Allergies', 
+                        _allergiesController, 
+                        hint: _allergiesController.text.isEmpty 
+                            ? 'No allergies recorded' 
+                            : 'Peanuts, Dairy, etc.'
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -453,7 +479,14 @@ class _ProfilePageState extends State<ProfilePage> {
                     title: "Fitness Goals",
                     icon: Icons.fitness_center_outlined,
                     children: [
-                      _buildEditableField('Your Fitness Goals', _fitnessGoalsController, hint: 'Lose weight, Gain muscle, etc.', maxLines: 2),
+                      _buildEditableField(
+                        'Your Fitness Goals', 
+                        _fitnessGoalsController,
+                        hint: _fitnessGoalsController.text.isEmpty
+                            ? 'Set your fitness goals'
+                            : 'Lose weight, Gain muscle, etc.',
+                        maxLines: 2,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -632,7 +665,7 @@ class _ProfilePageState extends State<ProfilePage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
               controller: _locationController,
-              enabled: false, // Location is picked via dialog
+              enabled: false,
               style: TextStyle(color: _textColor, fontSize: 16),
               decoration: InputDecoration(
                 hintText: 'Select your location',
@@ -647,7 +680,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // New Widget for Feedback Category Dropdown
   Widget _buildFeedbackCategoryDropdown() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,7 +731,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // New Widget for Feedback Text Field
   Widget _buildFeedbackTextField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
