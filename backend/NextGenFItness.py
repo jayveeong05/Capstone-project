@@ -1181,6 +1181,43 @@ def check_workout_progress(plan_id):
         'total_days': total_days
     }), 200
 
+#mark exercise for progress analytics
+@app.route('/mark-exercise-status/<user_id>', methods=['POST'])
+def mark_exercise_status(user_id):
+    data = request.get_json()
+    today = datetime.now().strftime('%Y-%m-%d')
+    status_to_mark = data.get('status')  # 'completed' or 'overdue'
+    plan_id = data.get('plan_id')
+    exercise_id = data.get('exercise_id')
+    date_str = data.get('date')  # yyyy-mm-dd
+
+    if status_to_mark not in ['completed', 'overdue']:
+        return jsonify({'error': 'Invalid status'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if already exists
+    cursor.execute('''
+        SELECT * FROM ExerciseStatus
+        WHERE user_id = ? AND Exercise_ID = ? AND plan_id = ? AND date = ?
+    ''', (user_id, exercise_id, plan_id, date_str))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Already marked
+        return jsonify({'message': 'Already recorded for this date'}), 200
+
+    # Insert status
+    cursor.execute('''
+        INSERT INTO ExerciseStatus (user_id, Exercise_ID, plan_id, date, status)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': f'Exercise marked as {status_to_mark}'}), 200
+
 # --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
 @app.route('/api/users', methods=['GET'])
 def get_all_users():
@@ -2367,14 +2404,58 @@ def check_and_insert_daily_reminders(user_id):
     conn.commit()
     conn.close()
 
+#check the daily reminders and overdue exercise
 @app.route('/reminders/check/<user_id>', methods=['POST'])
-def check_and_insert_reminders(user_id):
-    try:
-        check_and_insert_daily_reminders(user_id)
-        return jsonify({'message': 'Reminders checked and inserted if due'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
+def check_reminders(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # Fetch all active plans
+    cursor.execute('SELECT plan_id, start_date, duration_months FROM WorkoutPlan WHERE user_id = ?', (user_id,))
+    plans = cursor.fetchall()
+
+    for plan in plans:
+        plan_id = plan['plan_id']
+        duration = int(plan['duration_months'])
+        start_date = datetime.strptime(plan['start_date'], '%Y-%m-%d')
+        end_date = start_date.replace(month=start_date.month + duration if start_date.month + duration <= 12 else (start_date.month + duration - 12))
+        
+        # Check each date from start_date to today
+        current_date = start_date
+        while current_date.strftime('%Y-%m-%d') <= today:
+            formatted_date = current_date.strftime('%Y-%m-%d')
+
+            # Get all exercises for this plan and date
+            cursor.execute('''
+                SELECT Exercise_ID FROM WorkoutPlanExercise
+                WHERE plan_id = ? AND date = ?
+            ''', (plan_id, formatted_date))
+            exercises = cursor.fetchall()
+
+            for ex in exercises:
+                exercise_id = ex['Exercise_ID']
+
+                # Skip if already marked
+                cursor.execute('''
+                    SELECT 1 FROM ExerciseStatus
+                    WHERE user_id = ? AND plan_id = ? AND Exercise_ID = ? AND date = ?
+                ''', (user_id, plan_id, exercise_id, formatted_date))
+                exists = cursor.fetchone()
+
+                if not exists and formatted_date < today:
+                    # Mark as overdue
+                    cursor.execute('''
+                        INSERT INTO ExerciseStatus (user_id, Exercise_ID, plan_id, date, status)
+                        VALUES (?, ?, ?, ?, 'overdue')
+                    ''', (user_id, exercise_id, plan_id, formatted_date))
+
+            current_date = current_date.replace(day=current_date.day + 1)
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '✅ Checked daily reminders and marked overdue exercises'}), 200
+
 #daily reminder helper for exercise
 def insert_daily_reminder_if_due(user_id, plan_id):
     conn = get_db_connection()
