@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'generate_workout_plan.dart';
-import 'customize_plan_page.dart'; // <-- Add this import
+import 'customize_plan_page.dart';
 
 class AllWorkoutPlansPage extends StatefulWidget {
   final int userId;
@@ -68,7 +68,9 @@ class _AllWorkoutPlansPageState extends State<AllWorkoutPlansPage> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => GenerateWorkoutPlanPage()),
+                        MaterialPageRoute(
+                          builder: (context) => GenerateWorkoutPlanPage(userId: widget.userId),
+                        ),
                       );
                     },
                     icon: Icon(Icons.add),
@@ -84,26 +86,83 @@ class _AllWorkoutPlansPageState extends State<AllWorkoutPlansPage> {
               itemCount: plans.length,
               itemBuilder: (context, index) {
                 final plan = plans[index];
-                return ListTile(
-                  leading: Icon(Icons.fitness_center),
-                  title: Text('Workout Plan #${plan['plan_id']}'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Duration: ${plan['duration_months']} months'),
-                      if (plan['created_at'] != null)
-                        Text('Created on: ${formatTimestamp(plan['created_at'])}'),
-                    ],
+                return Card(
+                  margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  elevation: 2,
+                  child: ListTile(
+                    leading: Icon(Icons.fitness_center, color: Colors.blueAccent),
+                    title: Text('Workout Plan #${plan['plan_id']}'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Duration: ${plan['duration_months']} months'),
+                        if (plan['created_at'] != null)
+                          Text('Created on: ${formatTimestamp(plan['created_at'])}'),
+                      ],
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.visibility, color: Colors.green),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ViewWorkoutPlanPage(planId: plan['plan_id']),
+                              ),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete, color: Colors.redAccent),
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: Text("Delete Plan"),
+                                content: Text("Are you sure you want to delete this workout plan?"),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: Text("Cancel"),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: Text("Delete"),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              final deleteResponse = await http.delete(
+                                Uri.parse('http://10.0.2.2:5000/delete-plan/${plan['plan_id']}'),
+                              );
+                              if (deleteResponse.statusCode == 200) {
+                                setState(() {
+                                  if (index < plans.length) {
+                                    plans.removeAt(index);
+                                  }
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('✅ Plan deleted successfully')),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('❌ Failed to delete plan')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  trailing: Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ViewWorkoutPlanPage(planId: plan['plan_id']),
-                      ),
-                    );
-                  },
                 );
               },
             ),

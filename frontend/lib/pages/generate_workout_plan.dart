@@ -7,11 +7,15 @@ import 'package:intl/intl.dart';
 import 'view_workoutplan_page.dart';
 
 class GenerateWorkoutPlanPage extends StatefulWidget {
+  final int userId;
+  const GenerateWorkoutPlanPage({required this.userId});
+
   @override
-  _GenerateWorkoutPlanPageState createState() => _GenerateWorkoutPlanPageState();
+  State<GenerateWorkoutPlanPage> createState() => _GenerateWorkoutPlanPageState();
 }
 
 class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
+  
   String? selectedLevel;
   String? selectedMechanic;
   String? selectedEquipment;

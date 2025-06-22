@@ -25,7 +25,8 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
-    _loadUsername(); // Load existing profile data when the page initializes
+    _loadUsername();
+    _fetchUserPlansWithProgress();
     _triggerDailyReminder();
   }
   // Function to load the username from SharedPreferences
@@ -116,6 +117,8 @@ Future<void> _logout() async {
     } else {
       print('❌ No user ID found in SharedPreferences for backend logout logging.');
     }    
+
+
 
     // Show SnackBar before navigating away
     ScaffoldMessenger.of(context).showSnackBar(
@@ -344,30 +347,76 @@ void _showNotifications(BuildContext context) async {
                     ],
                   ),
                   trailing: ElevatedButton(
-                    onPressed: () async {
-                      final res = await http.post(
-                        Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
-                      );
-                      if (res.statusCode == 200) {
-                        Navigator.pop(context); // Close modal
-                        _showNotifications(context); // Refresh with updated state
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("❌ Failed to mark as checked")),
+                      onPressed: () async {
+                        final res = await http.post(
+                          Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
                         );
-                      }
-                    },
-                    child: const Text("Check"),
+
+                        if (res.statusCode == 200) {
+                          // ✅ After successful check, also update the progress
+                          final planId = notif['plan_id'];
+                          if (planId != null) {
+                            await http.post(
+                              Uri.parse('http://10.0.2.2:5000/check_workout_progress/$planId'),
+                            );
+                          }
+
+                          Navigator.pop(context); // Close modal
+                          _showNotifications(context); // Refresh with updated state
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("❌ Failed to mark as checked")),
+                          );
+                        }
+                      },
+
+                      child: const Text("Check"),
+                    ),
                   ),
-                ),
-              );
-            }).toList(),
-          ],
-        ),
-      );
-    },
-  );
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+int? _selectedPlanId;
+List<Map<String, dynamic>> _userPlans = [];
+
+Future<void> _fetchUserPlansWithProgress() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getInt('user_id');
+  if (userId == null) return;
+
+  final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+  final uri = Uri.parse('http://10.0.2.2:5000/get-plans/$formattedUserId');
+
+  try {
+    final response = await http.get(uri);
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      final plans = List<Map<String, dynamic>>.from(data['plans']);
+
+      setState(() {
+        _userPlans = plans;
+
+        // Auto-select the latest or first plan if none selected
+        if (_selectedPlanId == null && plans.isNotEmpty) {
+          _selectedPlanId = plans.first['plan_id'];
+        }
+      });
+    } else {
+      throw Exception('Failed to fetch workout plans. Status: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error in _fetchUserPlansWithProgress: $e');
+  }
 }
+
           @override
           Widget build(BuildContext context) {
             return Scaffold(
@@ -421,40 +470,62 @@ void _showNotifications(BuildContext context) async {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Quick Stats/Highlights Card (Your Daily Progress)
-              _buildSectionCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Your Daily Progress',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                          fontFamily: 'Inter'),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildStatItem(
-                            Icons.local_fire_department, 'Calories Left', '1200 kcal', Colors.orange),
-                        _buildStatItem(Icons.run_circle_outlined, 'Steps', '5,200 / 8,000', Colors.green),
-                        _buildStatItem(Icons.fitness_center, 'Workouts', '1/2 Done', Colors.purple),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildProgressBar(
-                      'Overall Goal Progress',
-                      0.6, // Example value
-                      '60% Completed',
-                      Colors.blueAccent,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
+             _buildSectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Your Workout Plan Progress',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                            fontFamily: 'Inter'),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_userPlans.isEmpty)
+                        const Text("No workout plans found."),
+                      if (_userPlans.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DropdownButton<int>(
+                              value: _selectedPlanId,
+                              hint: const Text("Select Plan"),
+                              items: _userPlans.map<DropdownMenuItem<int>>((plan) {
+                                return DropdownMenuItem<int>(
+                                  value: plan['plan_id'],
+                                  child: Text("Plan ${plan['plan_id']} (${plan['duration_months']} month${plan['duration_months'] > 1 ? 's' : ''})"),
+                                );
+                              }).toList(),
+                              onChanged: (int? newId) {
+                                setState(() => _selectedPlanId = newId);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            if (_selectedPlanId != null)
+                              Builder(
+                                builder: (context) {
+                                  final selectedPlan = _userPlans.firstWhere(
+                                    (plan) => plan['plan_id'] == _selectedPlanId,
+                                    orElse: () => {},
+                                  );
 
+                                  if (selectedPlan.isEmpty) return SizedBox();
+
+                                  return _buildProgressBar(
+                                    'Progress for Plan ${selectedPlan['plan_id']}',
+                                    (selectedPlan['progress'] ?? 0) / 100,
+                                    '${selectedPlan['progress']}% Completed',
+                                    Colors.blueAccent,
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
               // 2. Quick Actions Section
               const Text(
                 'Quick Actions',

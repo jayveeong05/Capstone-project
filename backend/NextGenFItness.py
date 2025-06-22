@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from PIL import Image
 from food_recognition import FoodRecognition
 import google.generativeai as genai
+from dateutil.relativedelta import relativedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
@@ -336,38 +337,78 @@ def login():
 
     conn = get_db_connection()
     c = conn.cursor()
-    # Fetch role along with other user data
+    
+    # Fetch user info
     c.execute("SELECT user_id, password, role FROM User WHERE username = ?", (username,))
     user = c.fetchone()
     
     if user and check_password_hash(user['password'], password):
-        if user['role'] == 2: # Check if user role is 'banned'
+        # Handle banned and maintenance users
+        if user['role'] == 2:
             conn.close()
             return jsonify({'error': 'Your account has been disabled. Please contact support.'}), 403
-        if user['role'] == 3 and user['role'] != 0: # If role is 3 (temp disabled) and not admin
+        if user['role'] == 3 and user['role'] != 0:
             conn.close()
             return jsonify({'error': 'System is currently under maintenance. Please try again later.'}), 403
-        
-        try: #
-            # Log successful login
-            log_id = generate_log_id() #
-            user_id = user['user_id'] #
-            action = "Logged In" #
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") #
-            
-            c.execute("INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)", #
-                      (log_id, user_id, action, timestamp)) #
-            conn.commit() #
-        except Exception as e: #
-            print(f"Error logging login activity: {e}") #
-            # Continue with login success even if logging fails
 
+        user_id = user['user_id']
+        
+        # Log login attempt
+        try:
+            log_id = generate_log_id()
+            action = "Logged In"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            c.execute(
+                "INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)",
+                (log_id, user_id, action, timestamp)
+            )
+        except Exception as e:
+            print(f"Error logging login activity: {e}")
+            # Still allow login to proceed
+
+        # 🔁 Auto-update progress for all workout plans of this user
+        try:
+            c.execute("SELECT * FROM WorkoutPlan WHERE user_id = ?", (user_id,))
+            plans = c.fetchall()
+
+            for plan in plans:
+                plan_id = plan['plan_id']
+
+                # Total exercises assigned to this plan
+                c.execute("""
+                    SELECT COUNT(*) AS total_exercises
+                    FROM WorkoutPlanExercise
+                    WHERE plan_id = ?
+                """, (plan_id,))
+                total_exercises = c.fetchone()['total_exercises']
+
+                if total_exercises == 0:
+                    progress = 0
+                else:
+                    # Checked daily reminders for this plan
+                    c.execute("""
+                        SELECT COUNT(*) AS checked_reminders
+                        FROM notifications
+                        WHERE user_id = ? AND plan_id = ? AND type = 'daily reminder' AND checked = 1
+                    """, (user_id, plan_id))
+                    checked_reminders = c.fetchone()['checked_reminders']
+
+                    progress = min(int((checked_reminders / total_exercises) * 100), 100)
+
+                # Update progress
+                c.execute("UPDATE WorkoutPlan SET progress = ? WHERE plan_id = ?", (progress, plan_id))
+
+        except Exception as e:
+            print(f"❌ Error updating workout progress: {e}")
+
+        conn.commit()
         conn.close()
         return jsonify({
             'message': 'Login successful',
-            'user_id': user['user_id'],
-            'role': user['role']  # Add role to response
+            'user_id': user_id,
+            'role': user['role']
         }), 200
+
     else:
         conn.close()
         return jsonify({'error': 'Invalid username or password'}), 401
@@ -800,6 +841,18 @@ def get_plans(user_id):
 
     return jsonify({'plans': [dict(plan) for plan in plans]})
 
+#get user plan for progress
+@app.route('/get-user-plans/<user_id>', methods=['GET'])
+def get_user_plans(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM WorkoutPlan WHERE user_id = ?', (user_id,))
+    plans = cursor.fetchall()
+    conn.close()
+
+    return jsonify([dict(plan) for plan in plans])
+
 @app.route('/get-plan-dates/<int:plan_id>', methods=['GET'])
 def get_plan_dates(plan_id):
     conn = get_db_connection()
@@ -1059,7 +1112,75 @@ def save_custom_plan():
     except Exception as e:
         print("❌ Error:", e)
         return jsonify({"error": str(e)}), 500
-    
+
+#delete plan
+@app.route('/delete-plan/<int:plan_id>', methods=['DELETE'])
+def delete_plan(plan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM WorkoutPlanExercise WHERE plan_id = ?', (plan_id,))
+    cursor.execute('DELETE FROM WorkoutPlan WHERE plan_id = ?', (plan_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Plan deleted'}), 200
+   
+#check percentage of progress
+@app.route('/check_workout_progress/<int:plan_id>', methods=['POST'])
+def check_workout_progress(plan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 1. Get WorkoutPlan info (start date and duration)
+    cursor.execute('''
+        SELECT created_at, duration_months
+        FROM WorkoutPlan
+        WHERE plan_id = ?
+    ''', (plan_id,))
+    plan = cursor.fetchone()
+
+    if not plan:
+        conn.close()
+        return jsonify({'error': '❌ WorkoutPlan not found'}), 404
+
+    created_at = plan['created_at']
+    duration_months = plan['duration_months']
+
+    try:
+        start_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        # In case your DB stores it in a shorter format
+        start_date = datetime.strptime(created_at, '%Y-%m-%d')
+
+    end_date = start_date + relativedelta(months=duration_months)
+    total_days = (end_date - start_date).days
+
+    # 2. Count checked daily reminder notifications for that plan
+    cursor.execute('''
+        SELECT COUNT(*) AS completed_days
+        FROM notifications
+        WHERE plan_id = ? AND type = 'daily reminder' AND checked = 1
+    ''', (plan_id,))
+    completed_days = cursor.fetchone()['completed_days']
+
+    # 3. Calculate progress
+    progress = int((completed_days / total_days) * 100) if total_days > 0 else 0
+
+    # 4. Update the WorkoutPlan progress
+    cursor.execute('''
+        UPDATE WorkoutPlan
+        SET progress = ?
+        WHERE plan_id = ?
+    ''', (progress, plan_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'message': f'✅ Progress updated to {progress}%',
+        'progress': progress,
+        'completed_days': completed_days,
+        'total_days': total_days
+    }), 200
+
 # --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
 @app.route('/api/users', methods=['GET'])
 def get_all_users():
@@ -2380,4 +2501,4 @@ if __name__ == '__main__':
     print("  GET  /api/search-food - Search food items")
     print("  GET  /api/images/<filename> - Serve images")
     
-    app.run(debug=True)
+app.run(host='0.0.0.0', port=5000, debug=True)

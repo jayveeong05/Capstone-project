@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-
+import 'generate_workout_plan.dart';
 class CustomizePlanPage extends StatefulWidget {
   final int userId;
   const CustomizePlanPage({required this.userId});
@@ -125,24 +125,37 @@ class _CustomizePlanPageState extends State<CustomizePlanPage> {
             onTap: _pickStartDate,
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Duration (months): ${durationMonths.toInt()}"),
-                Expanded(
-                  child: Slider(
-                    min: 1,
-                    max: 12,
-                    divisions: 11,
-                    value: durationMonths,
-                    label: "${durationMonths.toInt()} months",
-                    onChanged: (val) => setState(() => durationMonths = val),
-                  ),
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ElevatedButton.icon(
+                icon: Icon(Icons.auto_fix_high),
+                label: Text("Auto Generate Plan"),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => GenerateWorkoutPlanPage(userId: widget.userId),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  minimumSize: Size.fromHeight(50),
+                  backgroundColor: const Color.fromARGB(255, 255, 255, 255),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                icon: Icon(Icons.save),
+                label: Text("Save Custom Plan"),
+                onPressed: _savePlan,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: Size.fromHeight(50),
+                ),
+              ),
+            ],
           ),
+        ),
           Expanded(
             child: NotificationListener<ScrollNotification>(
               onNotification: (ScrollNotification scrollInfo) {
@@ -155,15 +168,6 @@ class _CustomizePlanPageState extends State<CustomizePlanPage> {
                 itemCount: exerciseLibrary.length,
                 itemBuilder: (context, index) => buildExerciseTile(exerciseLibrary[index]),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton.icon(
-              icon: Icon(Icons.save),
-              label: Text("Save Custom Plan"),
-              onPressed: _savePlan,
-              style: ElevatedButton.styleFrom(minimumSize: Size.fromHeight(50)),
             ),
           ),
         ],
