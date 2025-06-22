@@ -12,7 +12,7 @@ class FeedbackData {
   final String submittedAt;
   final String? category;
   final String feedbackText;
-  String status; // Can be changed (Pending/Reviewed)
+  String status; // Can be changed (Pending/Responded)
 
   FeedbackData({
     required this.feedbackId,
@@ -99,7 +99,7 @@ class FeedbackDataSource extends DataTableSource {
     return DataRow(
       color: MaterialStateProperty.resolveWith<Color?>((Set<MaterialState> states) {
         if (isPending) return Colors.yellow.withOpacity(0.1); // Light yellow for pending
-        return null; // Use default row color for reviewed
+        return null; // Use default row color for responded
       }),
       cells: [
         DataCell(Text(feedback.feedbackId)),
@@ -209,7 +209,7 @@ class _AdminFeedbackOverviewState extends State<AdminFeedbackOverview> {
   }
 
   Future<void> _toggleFeedbackStatus(FeedbackData feedback) async {
-    final newStatus = feedback.status == 'Pending' ? 'Reviewed' : 'Pending';
+    final newStatus = feedback.status == 'Pending' ? 'Responded' : 'Pending';
     final uri = Uri.parse('$_backendBaseUrl/api/feedback/${feedback.feedbackId}/status');
 
     try {
@@ -310,7 +310,7 @@ class _AdminFeedbackOverviewState extends State<AdminFeedbackOverview> {
                         items: const [
                           DropdownMenuItem(value: 'All', child: Text('All Statuses')),
                           DropdownMenuItem(value: 'Pending', child: Text('Pending')),
-                          DropdownMenuItem(value: 'Reviewed', child: Text('Reviewed')),
+                          DropdownMenuItem(value: 'Responded', child: Text('Responded')),
                         ],
                       ),
                     ),
