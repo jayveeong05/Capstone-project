@@ -57,14 +57,7 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
     _selectedMechanic = ex?.mechanic;
     _selectedEquipment = ex?.equipment;
     _selectedCategory = ex?.category;
-
-    if (ex?.primaryMuscles != null) {
-      _selectedPrimaryMuscles = ex!.primaryMuscles
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-    }
+    _selectedPrimaryMuscles = ex?.primaryMuscles ?? [];
   }
 
   Future<void> _pickImage(int index) async {
@@ -92,7 +85,7 @@ class _AddOrEditExercisePageState extends State<AddOrEditExercisePage> {
       'level': _nullableText(_selectedLevel),
       'mechanic': _nullableText(_selectedMechanic),
       'equipment': _nullableText(_selectedEquipment),
-      'primaryMuscles': _selectedPrimaryMuscles.join(','),
+      'primaryMuscles': _selectedPrimaryMuscles, // ✅ send as list
       'category': _nullableText(_selectedCategory),
       'instructions': instructionsController.text.trim(),
     });

@@ -1,10 +1,12 @@
+import "dart:convert";
+
 class Exercise {
   final int id;
   final String name;
   final String level;
   final String mechanic;
   final String equipment;
-  final String primaryMuscles;
+  final List<String> primaryMuscles; // ✅ Changed from String to List<String>
   final String category;
   final List<String> instructions;
   final List<String> imageUrls;
@@ -21,17 +23,44 @@ class Exercise {
     required this.imageUrls,
   });
 
-  factory Exercise.fromJson(Map<String, dynamic> json) {
-    return Exercise(
-      id: json['id'],
-      name: json['name'] ?? '',
-      level: json['level'] ?? '',
-      mechanic: json['mechanic'] ?? '',
-      equipment: json['equipment'] ?? '',
-      primaryMuscles: json['primaryMuscles'] ?? '',
-      category: json['category'] ?? '',
-      instructions: List<String>.from(json['instructions'] ?? []),
-      imageUrls: List<String>.from(json['image_urls'] ?? []),
-    );
+factory Exercise.fromJson(Map<String, dynamic> json) {
+  List<String> parseList(dynamic val) {
+    if (val == null) return [];
+    if (val is String) {
+      try {
+        return List<String>.from(jsonDecode(val));
+      } catch (_) {
+        return val.split(',').map((e) => e.trim()).toList();
+      }
+    }
+    if (val is List) return List<String>.from(val);
+    return [];
+  }
+
+  return Exercise(
+    id: json['Exercise_ID'] ?? json['id'],
+    name: json['name'] ?? '',
+    level: json['level'] ?? '',
+    mechanic: json['mechanic'] ?? '',
+    equipment: json['equipment'] ?? '',
+    primaryMuscles: parseList(json['primaryMuscles']), // ✅ fixed here
+    category: json['category'] ?? '',
+    instructions: parseList(json['instructions']),
+    imageUrls: parseList(json['image_urls']),
+  );
+}
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'level': level,
+      'mechanic': mechanic,
+      'equipment': equipment,
+      'primaryMuscles': primaryMuscles, // ✅ send as list
+      'category': category,
+      'instructions': instructions,
+      'image_urls': imageUrls,
+    };
   }
 }

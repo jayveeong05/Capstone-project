@@ -100,7 +100,9 @@ class _FitnessPageManagementPageState extends State<FitnessPageManagementPage> {
       level: exMap['level'] ?? '',
       mechanic: exMap['mechanic'] ?? '',
       equipment: exMap['equipment'] ?? '',
-      primaryMuscles: exMap['primaryMuscles'] ?? '',
+      primaryMuscles: exMap['primaryMuscles'] is String
+      ? List<String>.from(jsonDecode(exMap['primaryMuscles']))
+      : List<String>.from(exMap['primaryMuscles'] ?? []),
       category: exMap['category'] ?? '',
       instructions: List<String>.from(exMap['instructions'] ?? []),
       imageUrls: List<String>.from(exMap['image_urls'] ?? []),

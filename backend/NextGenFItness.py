@@ -785,12 +785,15 @@ def generate_workout_plan():
     exercises = [dict(row) for row in rows]
     random.shuffle(exercises)
 
-    total_days = duration_months * 4 * 3  # 3 days per week for 4 weeks/month
-    plan = []
-    while len(plan) < total_days:
-        plan.extend(exercises)
+    total_workout_days = duration_months * 4 * 3  # 3 days/week × 4 weeks/month
+    exercises_per_day = 3
+    total_exercises_needed = total_workout_days * exercises_per_day
 
-    plan = plan[:total_days] 
+    plan = []
+    while len(plan) < total_exercises_needed:
+        plan.extend(exercises)
+    plan = plan[:total_exercises_needed]
+
 
     # Set the start date
     if start_date_str:
@@ -810,16 +813,20 @@ def generate_workout_plan():
 
     # Insert into WorkoutPlanExercise with actual dates
     plan_by_dates = {}
-    for i, ex in enumerate(plan):
-        exercise_date = start_date + timedelta(days=i)
-        formatted_date = exercise_date.strftime("%Y-%m-%d")
+    for day_index in range(total_workout_days):
+        workout_date = start_date + timedelta(days=day_index * 2)  # e.g., every 2 days
+        formatted_date = workout_date.strftime("%Y-%m-%d")
 
-        cur.execute('''
-            INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
-            VALUES (?, ?, ?)
-        ''', (plan_id, ex['Exercise_ID'], formatted_date))
+        for j in range(exercises_per_day):
+            exercise_index = day_index * exercises_per_day + j
+            ex = plan[exercise_index]
 
-        plan_by_dates[formatted_date] = plan_by_dates.get(formatted_date, []) + [ex]
+            cur.execute('''
+                INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
+                VALUES (?, ?, ?)
+            ''', (plan_id, ex['Exercise_ID'], formatted_date))
+
+            plan_by_dates[formatted_date] = plan_by_dates.get(formatted_date, []) + [ex]
 
     conn.commit()
     conn.close()
@@ -994,22 +1001,35 @@ def delete_exercise_plan():
 
     return jsonify({'message': 'Workout entry deleted successfully'})
 
-#update exercise library
 @app.route('/update-exercise/<int:exercise_id>', methods=['PUT'])
 def update_exercise(exercise_id):
     data = request.json
+    print('RECEIVED primaryMuscles:', data['primaryMuscles'], type(data['primaryMuscles']))
     conn = get_db_connection()
     cur = conn.cursor()
+
+    # Convert list to JSON string
+    primary_muscles_json = json.dumps(data['primaryMuscles'])
+
     cur.execute("""
-        UPDATE Exercise SET name=?, level=?, mechanic=?, equipment=?, primaryMuscles=?, category=?, instructions=?
+        UPDATE Exercise
+        SET name=?, level=?, mechanic=?, equipment=?, primaryMuscles=?, category=?, instructions=?
         WHERE Exercise_ID=?
-    """, (data['name'], data['level'], data['mechanic'], data['equipment'],
-          data['primaryMuscles'], data['category'], data['instructions'], exercise_id))
+    """, (
+        data['name'],
+        data['level'],
+        data['mechanic'],
+        data['equipment'],
+        primary_muscles_json,  # use JSON string
+        data['category'],
+        data['instructions'],
+        exercise_id
+    ))
+
     conn.commit()
     conn.close()
     return jsonify({'message': 'Exercise updated'}), 200
 
-@app.route('/upload-exercise-images/<int:exercise_id>', methods=['POST'])
 def upload_exercise_images(exercise_id):
     import os
     from werkzeug.utils import secure_filename
@@ -1074,7 +1094,7 @@ def save_custom_plan():
 
     user_id = data.get('user_id')
     exercise_ids = data.get('exercise_ids', [])
-    duration = data.get('duration', 3)  # default to 3 months if not provided
+    duration = data.get('duration', 3)  # default to 3 months
 
     if not user_id or not exercise_ids:
         return jsonify({"error": "Missing user_id or exercise_ids"}), 400
@@ -1092,17 +1112,23 @@ def save_custom_plan():
 
         plan_id = cursor.lastrowid
 
-        # Generate dates for exercises
-        total_days = duration * 30
+        # Settings for custom distribution
+        exercises_per_day = 3
+        total_days = (len(exercise_ids) + exercises_per_day - 1) // exercises_per_day
         start_date = datetime.now().date()
-        for i, exercise_id in enumerate(exercise_ids):
-            day_offset = i % total_days
-            target_date = start_date + timedelta(days=day_offset)
 
-            cursor.execute('''
-                INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
-                VALUES (?, ?, ?)
-            ''', (plan_id, exercise_id, target_date.strftime('%Y-%m-%d')))
+        for day_index in range(total_days):
+            target_date = start_date + timedelta(days=day_index)
+            for i in range(exercises_per_day):
+                exercise_index = day_index * exercises_per_day + i
+                if exercise_index >= len(exercise_ids):
+                    break
+                exercise_id = exercise_ids[exercise_index]
+
+                cursor.execute('''
+                    INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
+                    VALUES (?, ?, ?)
+                ''', (plan_id, exercise_id, target_date.strftime('%Y-%m-%d')))
 
         conn.commit()
         conn.close()
@@ -1112,7 +1138,6 @@ def save_custom_plan():
     except Exception as e:
         print("❌ Error:", e)
         return jsonify({"error": str(e)}), 500
-
 #delete plan
 @app.route('/delete-plan/<int:plan_id>', methods=['DELETE'])
 def delete_plan(plan_id):
