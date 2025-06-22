@@ -441,6 +441,7 @@ Future<void> _fetchUserPlansWithProgress() async {
               backgroundColor: Colors.grey[50], // Light background for modern feel
               appBar: AppBar(
                 backgroundColor: Colors.grey[50],
+                automaticallyImplyLeading: false,
                 elevation: 0,
                 title: Text(
                   'Welcome, $_username! 👋', // Display personalized username

@@ -559,6 +559,7 @@ Future<void> _toggleSystemStatus(bool disable) async {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin Dashboard'),
+        automaticallyImplyLeading: false,
         actions: [
           IconButton(icon: const Icon(Icons.article_outlined), onPressed: _showLogDialog),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
