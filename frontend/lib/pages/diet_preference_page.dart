@@ -104,7 +104,7 @@ class _DietPreferencePageState extends State<DietPreferencePage> {
         return;
       }
 
-      // Generate diet plan
+      // Generate diet plan (replaces current ongoing if exists)
       final generateResponse = await http.post(
         Uri.parse('http://10.0.2.2:5000/api/generate-diet-plan'),
         headers: {'Content-Type': 'application/json'},
@@ -114,6 +114,7 @@ class _DietPreferencePageState extends State<DietPreferencePage> {
           'plan_name': 'My Personalized Diet Plan',
         }),
       );
+
 
       if (generateResponse.statusCode == 201) {
         Navigator.pop(context, true); // success

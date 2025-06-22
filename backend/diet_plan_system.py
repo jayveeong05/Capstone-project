@@ -9,7 +9,7 @@ import math
 import uuid
 import re
 import random
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from collections import defaultdict
 from flask import request, jsonify
 
@@ -380,6 +380,21 @@ def setup_diet_plan_routes(app, diet_system):
             if not user_prefs:
                 return jsonify({'error': 'User dietary preferences not found', 'success': False}), 404
             
+            # Get ingredient-level dislikes
+            conn = diet_system.get_db_connection()
+            c = conn.cursor()
+            c.execute("""
+                SELECT ingredient_id, preference_type 
+                FROM DietPreferenceIngredient 
+                WHERE diet_pref_id = (
+                    SELECT diet_pref_id FROM UserDietPreference 
+                    WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
+                )
+            """, (user_id,))
+            ingredient_prefs = {row['ingredient_id']: row['preference_type'] for row in c.fetchall()}
+            conn.close()
+            user_prefs['ingredient_preferences'] = ingredient_prefs
+
             # Calculate daily calorie needs
             daily_calories = diet_system.calculate_daily_calories(user_prefs)
             calories_per_meal = daily_calories // 3
@@ -413,31 +428,63 @@ def setup_diet_plan_routes(app, diet_system):
             # Create meal plan
             meal_plan = diet_system.create_balanced_meal_plan(suitable_recipes, daily_calories, duration_days)
             
+            # Generate IDs
+            diet_plan_id = diet_system.generate_diet_plan_id()
+            starting_meal_id = diet_system.generate_meal_plan_id()
+            start_num = int(starting_meal_id[2:])
+
             # Save to database
             conn = diet_system.get_db_connection()
             c = conn.cursor()
-            
-            # Insert diet plan
-            diet_plan_id = diet_system.generate_diet_plan_id()
-            c.execute("""
-                INSERT INTO DietPlan (diet_plan_id, user_id, plan_name, description, daily_calories, duration_days)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (diet_plan_id, user_id, plan_name, 
-                  f"Personalized {duration_days}-day diet plan", daily_calories, duration_days))
-            
-            # Generate the starting meal_plan_id
-            starting_id = diet_system.generate_meal_plan_id()  # e.g. MP005
-            start_num = int(starting_id[2:])  # extract number: 5
 
-            # Loop and generate unique meal_plan_ids in memory
-            for i, meal in enumerate(meal_plan):
-                meal_plan_id = f"MP{start_num + i:03d}"  # MP005, MP006, etc.
+            # Mark existing ongoing plan as replaced
+            c.execute("""
+                SELECT * FROM UserDietPlan 
+                WHERE user_id = ? AND status = 'Ongoing'
+            """, (user_id,))
+            existing_plan = c.fetchone()
+
+            if existing_plan:
+                old_diet_plan_id = existing_plan['diet_plan_id']
                 
+                # Update UserDietPlan status and end_date
+                c.execute("""
+                    UPDATE UserDietPlan 
+                    SET status = 'Replaced', end_date = ?
+                    WHERE user_id = ? AND diet_plan_id = ?
+                """, (date.today(), user_id, old_diet_plan_id))
+
+                # Update DietPlan status as well
+                c.execute("""
+                    UPDATE DietPlan 
+                    SET status = 'Replaced'
+                    WHERE diet_plan_id = ?
+                """, (old_diet_plan_id,))
+
+            # Insert into DietPlan
+            c.execute("""
+                INSERT INTO DietPlan (diet_plan_id, user_id, plan_name, description, daily_calories, duration_days, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active')
+            """, (diet_plan_id, user_id, plan_name, f"Personalized {duration_days}-day diet plan", daily_calories, duration_days))
+
+            # Insert into UserDietPlan
+            start_date = date.today()
+            end_date = start_date + timedelta(days=duration_days)
+            c.execute("""
+                INSERT INTO UserDietPlan (user_id, diet_plan_id, start_date, end_date, status)
+                VALUES (?, ?, ?, ?, 'Ongoing')
+            """, (user_id, diet_plan_id, start_date, end_date))
+            
+            # Insert meals
+            for i, meal in enumerate(meal_plan):
+                meal_plan_id = f"MP{start_num + i:03d}"
                 c.execute("""
                     INSERT INTO MealPlan (meal_plan_id, diet_plan_id, day_number, meal_type, recipe_id, calories)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (meal_plan_id, diet_plan_id, meal['day'], meal['meal_type'], 
-                    meal['recipe']['recipe_id'], meal['recipe']['calories']))
+                """, (
+                    meal_plan_id, diet_plan_id, meal['day'], meal['meal_type'],
+                    meal['recipe']['recipe_id'], meal['recipe']['calories']
+                ))
             
             # Calculate and save nutrition targets
             target_id = f"NT{diet_plan_id[3:]}"
@@ -491,23 +538,27 @@ def setup_diet_plan_routes(app, diet_system):
             traceback.print_exc()  # See full traceback in console
             return jsonify({'error': f'Error generating diet plan: {str(e)}', 'success': False}), 500
 
-    @app.route('/api/diet-plans/<user_id>', methods=['GET'])
+    @app.route('/api/user-diet-plans/<user_id>', methods=['GET'])
     def get_user_diet_plans_route(user_id):
         """Get all diet plans for a user"""
         try:
             # Ensure user_id format
             if user_id.isdigit():
                 user_id = f"U{int(user_id):03d}"
+            print(f"[DEBUG] Looking up diet plans for user_id: {user_id}")
+
             
             conn = diet_system.get_db_connection()
             c = conn.cursor()
             
             c.execute("""
-                SELECT dp.*, nt.protein_grams, nt.carbs_grams, nt.fat_grams, nt.fiber_grams
+                SELECT dp.*, udp.start_date, udp.end_date, udp.status AS user_status,
+                    nt.protein_grams, nt.carbs_grams, nt.fat_grams, nt.fiber_grams
                 FROM DietPlan dp
+                JOIN UserDietPlan udp ON dp.diet_plan_id = udp.diet_plan_id AND dp.user_id = udp.user_id
                 LEFT JOIN NutritionTargets nt ON dp.diet_plan_id = nt.diet_plan_id
                 WHERE dp.user_id = ?
-                ORDER BY dp.created_at DESC
+                ORDER BY udp.start_date DESC
             """, (user_id,))
             
             plans = []
@@ -534,11 +585,20 @@ def setup_diet_plan_routes(app, diet_system):
             
             # Get diet plan info
             c.execute("""
-                SELECT dp.*, nt.protein_grams, nt.carbs_grams, nt.fat_grams, nt.fiber_grams
-                FROM DietPlan dp
-                LEFT JOIN NutritionTargets nt ON dp.diet_plan_id = nt.diet_plan_id
-                WHERE dp.diet_plan_id = ?
-            """, (diet_plan_id,))
+            SELECT 
+                dp.*, 
+                udp.start_date, 
+                udp.end_date, 
+                udp.status AS user_status, 
+                nt.protein_grams, 
+                nt.carbs_grams, 
+                nt.fat_grams, 
+                nt.fiber_grams
+            FROM DietPlan dp
+            LEFT JOIN NutritionTargets nt ON dp.diet_plan_id = nt.diet_plan_id
+            LEFT JOIN UserDietPlan udp ON dp.diet_plan_id = udp.diet_plan_id AND dp.user_id = udp.user_id
+            WHERE dp.diet_plan_id = ?
+        """, (diet_plan_id,))
             
             plan_info = c.fetchone()
             if not plan_info:

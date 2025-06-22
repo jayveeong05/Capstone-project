@@ -12,23 +12,44 @@ class DietPlansPage extends StatefulWidget {
 }
 
 class _DietPlansPageState extends State<DietPlansPage> {
-  late Future<List<dynamic>> _dietPlansFuture;
+  List<Map<String, dynamic>> _plans = [];
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _dietPlansFuture = fetchDietPlans();
+    _fetchDietPlans();
   }
 
-  Future<List<dynamic>> fetchDietPlans() async {
-    final response = await http.get(
-      Uri.parse('http://10.0.2.2:5000/api/diet-plans/${widget.userId}'),
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['diet_plans'] ?? [];
-    } else {
-      throw Exception('Failed to load diet plans');
+  Future<void> _fetchDietPlans() async {
+    
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:5000/api/user-diet-plans/${widget.userId}'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _plans = List<Map<String, dynamic>>.from(data['diet_plans'] ?? []);
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load plans';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Network error: $e';
+      });
+    } finally {
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
@@ -41,7 +62,7 @@ class _DietPlansPageState extends State<DietPlansPage> {
     );
   }
 
-    void _openGenerateDietPlan() async {
+  void _openGenerateDietPlan() async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -49,55 +70,77 @@ class _DietPlansPageState extends State<DietPlansPage> {
       ),
     );
     if (result == true) {
-      setState(() {
-        _dietPlansFuture = fetchDietPlans();
-      });
+      _fetchDietPlans();
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('My Diet Plan')),
-      body: FutureBuilder<List<dynamic>>(
-        future: _dietPlansFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          final plans = snapshot.data!;
-          if (plans.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('No diet plan found.'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _openGenerateDietPlan,
-                    child: const Text('Generate Diet Plan'),
-                  ),
-                ],
-              ),
-            );
-          }
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!))
+              : _plans.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('No diet plan found.'),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _openGenerateDietPlan,
+                            child: const Text('Generate Diet Plan'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: _plans.length,
+                            itemBuilder: (context, index) {
+                              final plan = _plans[index];
+                              final status = plan['status'] ?? 'Unknown';
 
-          // Show latest plan
-          final plan = plans.first;
-          return ListTile(
-            title: Text(plan['plan_name'] ?? 'Diet Plan'),
-            subtitle: Text('Calories: ${plan['daily_calories']} | Days: ${plan['duration_days']}'),
-            onTap: () => _openDietPlanDetails(plan['diet_plan_id']),
-          );
-        },
-      ),
+                              final statusColor = {
+                                'Ongoing': Colors.green,
+                                'Finished': Colors.red,
+                                'Replaced': Colors.grey,
+                              }[status] ?? Colors.blueGrey;
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                child: ListTile(
+                                  title: Text(plan['plan_name'] ?? 'My Diet Plan'),
+                                  subtitle: Text('Start: ${plan['start_date']} | End: ${plan['end_date']}'),
+                                  trailing: Chip(
+                                    label: Text(status),
+                                    backgroundColor: statusColor.withOpacity(0.2),
+                                    labelStyle: TextStyle(color: statusColor),
+                                  ),
+                                  onTap: () => _openDietPlanDetails(plan['diet_plan_id']),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: ElevatedButton.icon(
+                            onPressed: _openGenerateDietPlan,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Create New Plan'),
+                          ),
+                        ),
+                      ],
+                    ),
     );
   }
 }
+
 class DietPlanDetailPage extends StatelessWidget {
   final String dietPlanId;
   const DietPlanDetailPage({required this.dietPlanId, super.key});
@@ -128,12 +171,25 @@ class DietPlanDetailPage extends StatelessWidget {
           }
           final plan = snapshot.data!;
           final mealPlan = plan['meal_plan'] as Map<String, dynamic>;
+
+          final diet = plan['diet_plan'];
+
+          // Access merged fields directly
+          final status = diet['user_status'] ?? diet['status'] ?? 'Unknown';
+          final startDate = diet['start_date'] ?? 'N/A';
+          final endDate = diet['end_date'] ?? 'N/A';
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(plan['diet_plan']['plan_name'] ?? '', style: Theme.of(context).textTheme.titleLarge),
-              Text('Calories: ${plan['diet_plan']['daily_calories']}'),
-              const SizedBox(height: 16),
+              Text(diet['plan_name'] ?? '', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text('Status: $status'),
+              Text('Calories per day: ${diet['daily_calories']}'),
+              Text('Duration: ${diet['duration_days']} days'),
+              Text('Start Date: $startDate'),
+              Text('End Date: $endDate'),
+              const Divider(height: 24),
               ...mealPlan.entries.map((entry) {
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 8),
