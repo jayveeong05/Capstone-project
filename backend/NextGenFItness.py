@@ -2437,14 +2437,13 @@ def check_reminders(user_id):
     today = datetime.now().strftime('%Y-%m-%d')
 
     # Fetch all active plans
-    cursor.execute('SELECT plan_id, start_date, duration_months FROM WorkoutPlan WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT plan_id, created_at, duration_months FROM WorkoutPlan WHERE user_id = ?', (user_id,))
     plans = cursor.fetchall()
 
     for plan in plans:
         plan_id = plan['plan_id']
         duration = int(plan['duration_months'])
-        start_date = datetime.strptime(plan['start_date'], '%Y-%m-%d')
-        end_date = start_date.replace(month=start_date.month + duration if start_date.month + duration <= 12 else (start_date.month + duration - 12))
+        start_date = datetime.strptime(plan['created_at'], '%Y-%m-%d %H:%M:%S')
         
         # Check each date from start_date to today
         current_date = start_date
