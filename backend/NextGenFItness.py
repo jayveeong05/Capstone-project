@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify,send_from_directory
+from flask import Flask, request, jsonify,send_from_directory,current_app
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -67,7 +67,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('backend/NextGenFitness.db')
+    conn = sqlite3.connect('NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -367,39 +367,36 @@ def login():
             # Still allow login to proceed
 
         # 🔁 Auto-update progress for all workout plans of this user
-        try:
-            c.execute("SELECT * FROM WorkoutPlan WHERE user_id = ?", (user_id,))
-            plans = c.fetchall()
+            try:
+                today = datetime.now().strftime("%Y-%m-%d")
 
-            for plan in plans:
-                plan_id = plan['plan_id']
-
-                # Total exercises assigned to this plan
+                # ✅ Get latest plan for the user
                 c.execute("""
-                    SELECT COUNT(*) AS total_exercises
-                    FROM WorkoutPlanExercise
-                    WHERE plan_id = ?
-                """, (plan_id,))
-                total_exercises = c.fetchone()['total_exercises']
+                    SELECT * FROM WorkoutPlan 
+                    WHERE user_id = ? 
+                    ORDER BY plan_id DESC 
+                    LIMIT 1
+                """, (user_id,))
+                latest_plan = c.fetchone()
 
-                if total_exercises == 0:
-                    progress = 0
-                else:
-                    # Checked daily reminders for this plan
+                latest_plan_id = latest_plan['plan_id'] if latest_plan else None
+
+                # ✅ Get today's workout exercises for that plan
+                today_exercises = []
+                if latest_plan_id:
                     c.execute("""
-                        SELECT COUNT(*) AS checked_reminders
-                        FROM notifications
-                        WHERE user_id = ? AND plan_id = ? AND type = 'daily reminder' AND checked = 1
-                    """, (user_id, plan_id))
-                    checked_reminders = c.fetchone()['checked_reminders']
+                        SELECT e.Exercise_ID, e.name, e.primaryMuscles, e.instructions
+                        FROM WorkoutPlanExercise wpe
+                        JOIN Exercise e ON e.Exercise_ID = wpe.Exercise_ID
+                        WHERE wpe.plan_id = ? AND wpe.date = ?
+                    """, (latest_plan_id, today))
+                    today_exercises = [dict(row) for row in c.fetchall()]
 
-                    progress = min(int((checked_reminders / total_exercises) * 100), 100)
-
-                # Update progress
-                c.execute("UPDATE WorkoutPlan SET progress = ? WHERE plan_id = ?", (progress, plan_id))
-
-        except Exception as e:
-            print(f"❌ Error updating workout progress: {e}")
+                # ✅ Return with login response
+            except Exception as e:
+                print(f"❌ Error fetching today's workout: {e}")
+                today_exercises = []
+                latest_plan_id = None
 
         conn.commit()
         conn.close()
@@ -764,17 +761,22 @@ def generate_workout_plan():
         query += " AND mechanic = ?"
         params.append(mechanic)
     if equipment:
-        query += " AND equipment = ?"
-        params.append(equipment)
+        if equipment == 'null':
+            query += " AND equipment IS NULL"
+        else:
+            query += " AND equipment = ?"
+            params.append(equipment)
     if primaryMuscle:
-        query += " AND primaryMuscles = ?"
-        params.append(primaryMuscle)
+        query += " AND primaryMuscles LIKE ?"
+        params.append(f"%{primaryMuscle}%")
     if category:
         query += " AND category = ?"
         params.append(category)
 
     conn = get_db_connection()
     cur = conn.cursor()
+    print("Running query:", query)
+    print("With parameters:", params)
     cur.execute(query, params)
     rows = cur.fetchall()
 
@@ -793,7 +795,6 @@ def generate_workout_plan():
     while len(plan) < total_exercises_needed:
         plan.extend(exercises)
     plan = plan[:total_exercises_needed]
-
 
     # Set the start date
     if start_date_str:
@@ -814,7 +815,7 @@ def generate_workout_plan():
     # Insert into WorkoutPlanExercise with actual dates
     plan_by_dates = {}
     for day_index in range(total_workout_days):
-        workout_date = start_date + timedelta(days=day_index * 2)  # e.g., every 2 days
+        workout_date = start_date + timedelta(days=day_index * 2)  # every 2 days
         formatted_date = workout_date.strftime("%Y-%m-%d")
 
         for j in range(exercises_per_day):
@@ -827,6 +828,30 @@ def generate_workout_plan():
             ''', (plan_id, ex['Exercise_ID'], formatted_date))
 
             plan_by_dates[formatted_date] = plan_by_dates.get(formatted_date, []) + [ex]
+
+    # Create today's reminder if applicable
+    today_str = datetime.today().strftime("%Y-%m-%d")
+    if start_date.strftime("%Y-%m-%d") == today_str:
+        cur.execute('''
+            SELECT E.name FROM WorkoutPlanExercise W
+            JOIN Exercise E ON E.Exercise_ID = W.Exercise_ID
+            WHERE W.plan_id = ? AND W.date = ?
+        ''', (plan_id, today_str))
+        todays_exercises = cur.fetchall()
+
+        if todays_exercises:
+            exercise_names = [row['name'] for row in todays_exercises]
+            count = len(exercise_names)
+            if count <= 3:
+                exercise_list = ", ".join(exercise_names)
+                message = f"Today's workout: {exercise_list} 🏋️"
+            else:
+                message = f"You have {count} exercises waiting today 💪"
+
+            cur.execute('''
+                INSERT INTO notifications (plan_id, user_id, type, message, created_at, checked)
+                VALUES (?, ?, 'daily reminder', ?, ?, 0)
+            ''', (plan_id, user_id, message, today_str))
 
     conn.commit()
     conn.close()
@@ -2431,26 +2456,28 @@ def check_and_insert_daily_reminders(user_id):
 
 #check the daily reminders and overdue exercise
 @app.route('/reminders/check/<user_id>', methods=['POST'])
+def check_reminders_route(user_id):
+    check_reminders(user_id)
+    return jsonify({'status': 'checked'})
 def check_reminders(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     today = datetime.now().strftime('%Y-%m-%d')
 
-    # Fetch all active plans
     cursor.execute('SELECT plan_id, created_at, duration_months FROM WorkoutPlan WHERE user_id = ?', (user_id,))
     plans = cursor.fetchall()
 
     for plan in plans:
         plan_id = plan['plan_id']
         duration = int(plan['duration_months'])
-        start_date = datetime.strptime(plan['created_at'], '%Y-%m-%d %H:%M:%S')
-        
-        # Check each date from start_date to today
+        start_date = datetime.strptime(plan['created_at'].split()[0], '%Y-%m-%d')  # fixes timestamp issue
+
+        end_date = start_date + timedelta(weeks=duration*4)
+
         current_date = start_date
-        while current_date.strftime('%Y-%m-%d') <= today:
+        while current_date <= datetime.today():
             formatted_date = current_date.strftime('%Y-%m-%d')
 
-            # Get all exercises for this plan and date
             cursor.execute('''
                 SELECT Exercise_ID FROM WorkoutPlanExercise
                 WHERE plan_id = ? AND date = ?
@@ -2460,7 +2487,6 @@ def check_reminders(user_id):
             for ex in exercises:
                 exercise_id = ex['Exercise_ID']
 
-                # Skip if already marked
                 cursor.execute('''
                     SELECT 1 FROM ExerciseStatus
                     WHERE user_id = ? AND plan_id = ? AND Exercise_ID = ? AND date = ?
@@ -2468,17 +2494,15 @@ def check_reminders(user_id):
                 exists = cursor.fetchone()
 
                 if not exists and formatted_date < today:
-                    # Mark as overdue
                     cursor.execute('''
                         INSERT INTO ExerciseStatus (user_id, Exercise_ID, plan_id, date, status)
                         VALUES (?, ?, ?, ?, 'overdue')
                     ''', (user_id, exercise_id, plan_id, formatted_date))
 
-            current_date = current_date.replace(day=current_date.day + 1)
+            current_date += timedelta(days=1)
 
     conn.commit()
     conn.close()
-    return jsonify({'message': '✅ Checked daily reminders and marked overdue exercises'}), 200
 
 #daily reminder helper for exercise
 def insert_daily_reminder_if_due(user_id, plan_id):

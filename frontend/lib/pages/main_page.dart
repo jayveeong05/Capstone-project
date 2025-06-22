@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -37,6 +38,15 @@ class _MainPageState extends State<MainPage> {
     });
   }
 
+void _launchYouTube(String url) async {
+    final Uri url = Uri(
+            scheme: 'https', host: 'www.youtube.com', path: '');  
+            if (!await launchUrl(url,
+                mode: LaunchMode.externalApplication)) {
+                throw 'Could not launch $url';
+       }
+  }
+
 Future<void> _triggerDailyReminder() async {
   final prefs = await SharedPreferences.getInstance();
   final userId = prefs.getInt('user_id');
@@ -44,8 +54,7 @@ Future<void> _triggerDailyReminder() async {
 
   final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
 
-  final response = await http.post(
-    Uri.parse('http://10.0.2.2:5000/reminders/check/$formattedUserId'),
+  final response = await http.post(Uri.parse('http://10.0.2.2:5000/reminders/check/$formattedUserId'),
   );
 
   if (response.statusCode == 200) {
@@ -560,9 +569,8 @@ Future<void> _fetchUserPlansWithProgress() async {
                       MaterialPageRoute(builder: (context) => const MealScannerScreen(userId: 'user123')), // TODO: Replace with actual user ID
                     );
                   }),
-                  _buildQuickActionButton(Icons.add_task, 'Set Goals', () {
-                    // TODO: Navigate to Goal Setting Page (or a modal)
-                    print('Set Goals');
+                  _buildQuickActionButton(Icons.add_task, 'Youtube', () {
+                    _launchYouTube('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
                   }),
                 ],
               ),

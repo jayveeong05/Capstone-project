@@ -87,35 +87,40 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
           );
           return;
         }
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text("Success"),
+          content: Text("Workout plan generated successfully!"),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context); // Close the dialog
+                await Future.delayed(Duration(milliseconds: 100)); // Delay lets UI settle
 
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text("Success"),
-            content: Text("Workout plan generated successfully!"),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
+                if (mounted) {
                   Navigator.pushReplacement(
                     context,
                     MaterialPageRoute(
                       builder: (context) => ViewWorkoutPlanPage(planId: planId),
                     ),
                   );
-                },
-                child: Text("OK"),
-              ),
-            ],
-          ),
-        );
+                }
+              },
+              child: Text("OK"),
+            ),
+          ],
+        ),
+      );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to generate plan.")),
         );
       }
     } catch (e) {
+      if (mounted) {
       setState(() => _isLoading = false);
+    }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("An error occurred: $e")),
       );
