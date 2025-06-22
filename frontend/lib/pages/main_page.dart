@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'fitness_page.dart';
@@ -21,6 +23,26 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   String _username = 'User'; // Default username
   int _currentIndex = 0; // For BottomNavigationBar selection
+  String _currentMotivationalMessage = '';
+
+  // List of motivational messages
+  final List<String> _motivationalMessages = [
+    "You don’t have to be great to start — but you do have to put down the donut. 🍩💪",
+    "Sore today, strong tomorrow. And yes, you can still walk like a crab in public. 🦀",
+    "Running late counts as cardio, but let’s aim higher. 🏃‍♂️🔥",
+    "Your sweat is just your fat crying. Let it all out! 😭💦",
+    "Warning: Side effects of working out include confidence, endorphins, and tight pants. 😎🩳",
+    "Crush today. The couch will still be there tomorrow. 🛋️✨",
+    "You didn’t come this far to only come this far. Keep going, beast! 🐺🔥",
+    "Be the reason someone checks themselves in the mirror twice. 👀💪",
+    "One more rep. One more win. You’ve got this! 🏆🎯",
+    "You vs. You. Spoiler: You're winning. 🥇🔁",
+    "Don’t quit now — pizza tastes better after a workout. 🍕❤️‍🔥",
+    "Work out like your ex is watching. 👀💃",
+    "Lift heavy. Laugh harder. Repeat. 😂🏋️‍♀️",
+    "We’re not here to take it easy. We’re here to take it legendary. 🌟🔥",
+    "Muscles loading… please wait. (And hydrate.) 💧⏳",
+  ];
 
   @override
   void initState() {
@@ -28,6 +50,7 @@ class _MainPageState extends State<MainPage> {
     _loadUsername();
     _fetchUserPlansWithProgress();
     _triggerDailyReminder();
+    _setRandomMotivationalMessage();
   }
   // Function to load the username from SharedPreferences
   Future<void> _loadUsername() async {
@@ -36,7 +59,14 @@ class _MainPageState extends State<MainPage> {
       _username = prefs.getString('username') ?? 'User'; // Retrieve username or default to 'User'
     });
   }
-
+  
+  // Function to set a random motivational message
+  void _setRandomMotivationalMessage() {
+    final _random = Random();
+    setState(() {
+      _currentMotivationalMessage = _motivationalMessages[_random.nextInt(_motivationalMessages.length)];
+    });
+  }
 Future<void> _triggerDailyReminder() async {
   final prefs = await SharedPreferences.getInstance();
   final userId = prefs.getInt('user_id');
@@ -574,12 +604,12 @@ Future<void> _fetchUserPlansWithProgress() async {
                 elevation: 6, // Slightly higher elevation for emphasis
                 child: Row(
                   children: [
-                    const Icon(Icons.lightbulb_outline,
+                    const Icon(Icons.local_fire_department,
                         color: Colors.white, size: 30),
                     const SizedBox(width: 15),
                     Expanded(
                       child: Text(
-                        "Great job! You’re only 30 minutes away from your daily workout goal. Keep pushing!",
+                        _currentMotivationalMessage,
                         style: TextStyle(color: Colors.white, fontSize: 15),
                       ),
                     ),
