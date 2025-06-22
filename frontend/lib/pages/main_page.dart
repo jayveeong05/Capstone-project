@@ -26,6 +26,7 @@ class _MainPageState extends State<MainPage> {
   void initState() {
     super.initState();
     _loadUsername(); // Load existing profile data when the page initializes
+    _triggerDailyReminder();
   }
   // Function to load the username from SharedPreferences
   Future<void> _loadUsername() async {
@@ -34,6 +35,24 @@ class _MainPageState extends State<MainPage> {
       _username = prefs.getString('username') ?? 'User'; // Retrieve username or default to 'User'
     });
   }
+
+Future<void> _triggerDailyReminder() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getInt('user_id');
+  if (userId == null) return;
+
+  final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+
+  final response = await http.post(
+    Uri.parse('http://10.0.2.2:5000/reminders/check/$formattedUserId'),
+  );
+
+  if (response.statusCode == 200) {
+    print("✅ Daily reminder checked for user $formattedUserId");
+  } else {
+    print("❌ Failed to check reminders: ${response.body}");
+  }
+}
 
 Future<void> writeLog(String username, String action) async {
   try {

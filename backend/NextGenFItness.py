@@ -2190,8 +2190,56 @@ def mark_notification_checked(notification_id):
 
     return jsonify({'message': 'Notification marked as checked'})
 
+def check_and_insert_daily_reminders(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # 1️⃣ Find all plan_ids with workouts scheduled today for this user
+    cursor.execute("""
+        SELECT DISTINCT wp.plan_id
+        FROM WorkoutPlan wp
+        JOIN WorkoutPlanExercise wpe ON wp.plan_id = wpe.plan_id
+        WHERE wp.user_id = ?
+          AND wpe.date = ?
+    """, (user_id, today))
+    
+    due_plans = cursor.fetchall()
+
+    for row in due_plans:
+        plan_id = row["plan_id"]
+
+        # 2️⃣ Check if a daily reminder has already been sent for this plan and date
+        check = cursor.execute("""
+            SELECT 1 FROM notifications
+            WHERE user_id = ? AND plan_id = ? AND DATE(created_at) = ? AND type = 'daily reminder'
+        """, (user_id, plan_id, today)).fetchone()
+
+        # 3️⃣ If not, insert a reminder
+        if not check:
+            cursor.execute("""
+                INSERT INTO notifications (user_id, plan_id, type, details, created_at, checked)
+                VALUES (?, ?, 'daily reminder', ?, datetime('now'), 0)
+            """, (
+                user_id,
+                plan_id,
+                f"Don't forget your workout for plan {plan_id} today! 🏋️‍♀️"
+            ))
+            print(f"✅ Inserted reminder for plan {plan_id}")
+
+    conn.commit()
+    conn.close()
+
+@app.route('/reminders/check/<user_id>', methods=['POST'])
+def check_and_insert_reminders(user_id):
+    try:
+        check_and_insert_daily_reminders(user_id)
+        return jsonify({'message': 'Reminders checked and inserted if due'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 #daily reminder helper for exercise
-def insert_daily_reminder_if_due(user_id, plan_id, reminder_text):
+def insert_daily_reminder_if_due(user_id, plan_id):
     conn = get_db_connection()
     today = datetime.now().strftime('%Y-%m-%d')
 
