@@ -146,7 +146,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _saveProfileData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    
+
     await prefs.setString('username', _usernameController.text);
     await prefs.setDouble('height', double.tryParse(_heightController.text) ?? 0.0);
     await prefs.setDouble('weight', double.tryParse(_weightController.text) ?? 0.0);
@@ -156,17 +156,38 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setString('dietary_goal', _fitnessGoalsController.text);
     await prefs.setString('profile_picture', _profilePictureBase64 ?? '');
 
-    setState(() => _isEditing = false);
+    // Now, update the backend
+    if (_userId != null) {
+      final formattedUserId = _formatUserId(_userId!);
+      final url = Uri.parse('http://10.0.2.2:5000/api/profile/$formattedUserId');
+      try {
+        final response = await http.put(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'username': _usernameController.text, // Even if not directly editable by user, send current value
+            'height': double.tryParse(_heightController.text),
+            'weight': double.tryParse(_weightController.text),
+            'age': int.tryParse(_ageController.text),
+            'location': _locationController.text,
+            'allergies': _allergiesController.text,
+            'dietary_goal': _fitnessGoalsController.text,
+            'profile_picture': _profilePictureBase64,
+          }),
+        );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Profile updated successfully!'),
-        backgroundColor: Colors.green[400],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+        if (response.statusCode == 200) {
+          _showSnackBar('Profile updated successfully!', Colors.green);
+        } else {
+          final errorData = json.decode(response.body);
+          _showSnackBar('Failed to update profile: ${errorData['error']}', Colors.red);
+        }
+      } catch (e) {
+        _showSnackBar('Error updating profile: $e', Colors.red);
+      }
+    }
+
+    setState(() => _isEditing = false);
   }
 
   Future<void> _submitFeedback() async {
@@ -319,23 +340,6 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isEditing = !_isEditing);
   }
 
-  void _openLocationPicker() async {
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Select Location'),
-        children: [
-          _buildLocationOption(Icons.location_on, 'Current Location'),
-          _buildLocationOption(Icons.search, 'Search on Map'),
-          _buildLocationOption(Icons.home, 'Home Address'),
-          _buildLocationOption(Icons.work, 'Work Address'),
-        ],
-      ),
-    );
-    if (result != null) {
-      setState(() => _locationController.text = result);
-    }
-  }
 
   Future<void> _showResetPasswordDialog() async {
     _currentPasswordController.clear();
@@ -453,14 +457,6 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
 
-  ListTile _buildLocationOption(IconData icon, String title) {
-    return ListTile(
-      leading: Icon(icon, color: _primaryColor),
-      title: Text(title),
-      onTap: () => Navigator.pop(context, title)
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -502,7 +498,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     title: "Personal Information",
                     icon: Icons.person_outline,
                     children: [
-                      _buildEditableField('Username', _usernameController),
+                      _buildDisplayField('Username', _usernameController.text),
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -516,12 +512,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         children: [
                           Expanded(child: _buildEditableField('Age', _ageController)),
                           const SizedBox(width: 16),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _isEditing ? _openLocationPicker : null,
-                              child: _buildLocationField(),
-                            ),
-                          ),
+                          Expanded(child: _buildEditableField('Location', _locationController)),
                         ],
                       ),
                       const SizedBox(height: 24),
@@ -563,14 +554,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     title: "Fitness Goals",
                     icon: Icons.fitness_center_outlined,
                     children: [
-                      _buildEditableField(
-                        'Your Fitness Goals', 
-                        _fitnessGoalsController,
-                        hint: _fitnessGoalsController.text.isEmpty
-                            ? 'Set your fitness goals'
-                            : 'Lose weight, Gain muscle, etc.',
-                        maxLines: 2,
-                      ),
+                      _buildFitnessGoalsDropdown(),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -622,26 +606,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildProfileHeader() {
-    return Column(
-      children: [
-        CircleAvatar(
-          radius: 60,
-          backgroundColor: _primaryColor.withOpacity(0.1),
-          child: Icon(Icons.person, size: 60, color: _primaryColor),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          _usernameController.text,
-          style: TextStyle(
-            color: _textColor,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildSection({
     required String title,
@@ -725,12 +689,51 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildLocationField() {
+  Widget _buildDisplayField(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Location',
+          label,
+          style: TextStyle(
+            color: _textColor.withOpacity(0.8),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity, // Take full width
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.transparent, // Not editable, so no grey background
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Colors.transparent, // No border for display
+            ),
+          ),
+          child: Text(
+            value,
+            style: TextStyle(color: _textColor, fontSize: 16),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFitnessGoalsDropdown() {
+    final List<String> fitnessGoalOptions = [
+      'Weight Loss',
+      'Muscle Gain',
+      'Improve Endurance',
+      'General Fitness',
+      'Maintain Weight',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your Fitness Goals',
           style: TextStyle(
             color: _textColor.withOpacity(0.8),
             fontWeight: FontWeight.w500,
@@ -746,16 +749,38 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              controller: _locationController,
-              enabled: false,
-              style: TextStyle(color: _textColor, fontSize: 16),
-              decoration: InputDecoration(
-                hintText: 'Select your location',
-                hintStyle: TextStyle(color: Colors.grey[400]),
-                border: InputBorder.none,
-                suffixIcon: _isEditing ? Icon(Icons.arrow_drop_down, color: _primaryColor) : null,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: _fitnessGoalsController.text.isNotEmpty && fitnessGoalOptions.contains(_fitnessGoalsController.text)
+                    ? _fitnessGoalsController.text
+                    : null, // Set to null if current text is not in options
+                hint: Text(
+                  _fitnessGoalsController.text.isEmpty
+                      ? 'Set your fitness goals'
+                      : _fitnessGoalsController.text, // Show current value as hint if not in options
+                  style: TextStyle(color: Colors.grey[400]),
+                ),
+                icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+                onChanged: _isEditing
+                    ? (String? newValue) {
+                        setState(() {
+                          _fitnessGoalsController.text = newValue ?? '';
+                        });
+                      }
+                    : null, // Disable dropdown when not editing
+                items: fitnessGoalOptions.map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+                // Disable text color change when not editing by setting a fixed style
+                style: TextStyle(
+                  color: _isEditing ? _textColor : _textColor.withOpacity(0.8), // Adjust opacity when not editing
+                  fontSize: 16,
+                ),
               ),
             ),
           ),

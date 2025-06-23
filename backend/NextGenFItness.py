@@ -2619,54 +2619,188 @@ def respond_to_feedback():
 
     return jsonify({'message': 'Feedback response and notification added.'}), 201
 
+@app.route('/api/profile/<user_id>', methods=['PUT'])
+def update_profile(user_id):
+    data = request.get_json()
+    
+    # Extract data with default None
+    full_name = data.get('username') # The frontend sends username as 'username'
+    age = data.get('age')
+    height = data.get('height')
+    weight = data.get('weight')
+    location = data.get('location')
+    allergies = data.get('allergies')
+    dietary_goal = data.get('dietary_goal')
+    profile_picture_base64 = data.get('profile_picture')
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # Update Profile table
+        bmi = None
+        if height is not None and weight is not None:
+            try:
+                height_m = float(height) / 100 # Convert cm to meters
+                bmi = round(float(weight) / (height_m ** 2), 2)
+            except (ValueError, TypeError, ZeroDivisionError):
+                bmi = None
+
+        cur.execute("SELECT * FROM Profile WHERE user_id = ?", (user_id,))
+        existing_profile = cur.fetchone()
+
+        if existing_profile:
+            # Construct UPDATE query for Profile table dynamically
+            profile_update_fields = []
+            profile_update_values = []
+            
+            if full_name is not None:
+                profile_update_fields.append("full_name = ?")
+                profile_update_values.append(full_name)
+            if age is not None:
+                profile_update_fields.append("age = ?")
+                profile_update_values.append(int(age))
+            if height is not None:
+                profile_update_fields.append("height = ?")
+                profile_update_values.append(float(height))
+            if weight is not None:
+                profile_update_fields.append("weight = ?")
+                profile_update_values.append(float(weight))
+            if bmi is not None:
+                profile_update_fields.append("bmi = ?")
+                profile_update_values.append(bmi)
+            if location is not None:
+                profile_update_fields.append("location = ?")
+                profile_update_values.append(location)
+            if profile_picture_base64 is not None:
+                profile_update_fields.append("profile_picture = ?")
+                profile_update_values.append(profile_picture_base64)
+            
+            if profile_update_fields:
+                profile_update_query = f"UPDATE Profile SET {', '.join(profile_update_fields)} WHERE user_id = ?"
+                profile_update_values.append(user_id)
+                cur.execute(profile_update_query, tuple(profile_update_values))
+        else:
+            # If profile does not exist, insert it (should not happen for existing users)
+            profile_id = generate_profile_id()
+            cur.execute("""
+                INSERT INTO Profile (profile_id, user_id, full_name, age, height, weight, bmi, location, profile_picture)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (profile_id, user_id, full_name, int(age), float(height), float(weight), bmi, location, profile_picture_base64))
+
+        # Update UserDietPreference table
+        cur.execute("SELECT * FROM UserDietPreference WHERE user_id = ?", (user_id,))
+        existing_diet_pref = cur.fetchone()
+
+        if existing_diet_pref:
+            diet_pref_update_fields = []
+            diet_pref_update_values = []
+
+            if dietary_goal is not None:
+                diet_pref_update_fields.append("dietary_goal = ?")
+                diet_pref_update_values.append(dietary_goal)
+            if allergies is not None:
+                diet_pref_update_fields.append("allergies = ?")
+                diet_pref_update_values.append(allergies)
+            
+            if diet_pref_update_fields:
+                diet_pref_update_query = f"UPDATE UserDietPreference SET {', '.join(diet_pref_update_fields)} WHERE user_id = ?"
+                diet_pref_update_values.append(user_id)
+                cur.execute(diet_pref_update_query, tuple(diet_pref_update_values))
+        else:
+            # If diet preference does not exist, insert it
+            diet_pref_id = generate_diet_pref_id()
+            cur.execute("""
+                INSERT INTO UserDietPreference (diet_pref_id, user_id, dietary_goal, allergies)
+                VALUES (?, ?, ?, ?)
+            """, (diet_pref_id, user_id, dietary_goal, allergies))
+
+        # Update Goal table (specifically current_value and goal_type)
+        cur.execute("SELECT * FROM Goal WHERE user_id = ?", (user_id,))
+        existing_goal = cur.fetchone()
+
+        if existing_goal:
+            goal_update_fields = []
+            goal_update_values = []
+            
+            if weight is not None: # User edited weight, update current_value in Goal
+                goal_update_fields.append("current_value = ?")
+                goal_update_values.append(float(weight))
+            if dietary_goal is not None: # User edited goals, update goal_type in Goal
+                goal_update_fields.append("goal_type = ?")
+                goal_update_values.append(dietary_goal)
+
+            if goal_update_fields:
+                goal_update_query = f"UPDATE Goal SET {', '.join(goal_update_fields)} WHERE user_id = ?"
+                goal_update_values.append(user_id)
+                cur.execute(goal_update_query, tuple(goal_update_values))
+        else:
+            # If goal does not exist, insert it (assuming a default status/target if needed)
+            goal_id = generate_goal_id()
+            cur.execute("""
+                INSERT INTO Goal (goal_id, user_id, goal_type, current_value, status)
+                VALUES (?, ?, ?, ?, ?)
+            """, (goal_id, user_id, dietary_goal, float(weight) if weight else None, 'In Progress'))
+
+
+        conn.commit()
+        return jsonify({'message': 'Profile updated successfully'}), 200
+
+    except sqlite3.Error as e:
+        conn.rollback()
+        print(f"Database error during profile update: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        conn.rollback()
+        print(f"An unexpected error occurred during profile update: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        conn.close()
+
 @app.route('/api/profile/<user_id>', methods=['GET'])
 def get_user_profile(user_id):
-    """
-    API endpoint to fetch a user's profile information,
-    including details from User, Profile, and UserDietPreference tables.
-    """
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Fetch username from User table
-        cursor.execute("SELECT username FROM User WHERE user_id = ?", (user_id,))
-        user_data = cursor.fetchone()
-        if not user_data:
-            return jsonify({'error': 'User not found'}), 404
-        username = user_data['username']
-
-        # Fetch profile details from Profile table
+        # Fetch profile data
         cursor.execute("""
-            SELECT full_name, age, gender, height, weight, bmi, location, profile_picture
-            FROM Profile
-            WHERE user_id = ?
+            SELECT 
+                p.full_name, p.age, p.gender, p.height, p.weight, p.bmi, p.location, p.profile_picture,
+                ud.dietary_goal, ud.allergies,
+                u.username
+            FROM Profile p
+            LEFT JOIN UserDietPreference ud ON p.user_id = ud.user_id
+            LEFT JOIN User u ON p.user_id = u.user_id
+            WHERE p.user_id = ?
         """, (user_id,))
         profile_data = cursor.fetchone()
 
-        # Fetch diet preferences from UserDietPreference table
-        cursor.execute("""
-            SELECT allergies, dietary_goal
-            FROM UserDietPreference
-            WHERE user_id = ?
-        """, (user_id,))
-        diet_pref_data = cursor.fetchone()
+        if not profile_data:
+            return jsonify({'error': 'Profile not found'}), 404
 
-        # Construct the response dictionary
+        # Fetch goals data
+        cursor.execute("SELECT goal_type, target_value, current_value, status FROM Goal WHERE user_id = ?", (user_id,))
+        goal_data = cursor.fetchone() # Assuming one primary goal for simplicity
+
         response_data = {
             'user_id': user_id,
-            'username': username,
-            'full_name': profile_data['full_name'] if profile_data else None,
-            'age': profile_data['age'] if profile_data else None,
-            'gender': profile_data['gender'] if profile_data else None,
-            'height': profile_data['height'] if profile_data else None,
-            'weight': profile_data['weight'] if profile_data else None,
-            'bmi': profile_data['bmi'] if profile_data else None,
-            'location': profile_data['location'] if profile_data else None,
-            'profile_picture': profile_data['profile_picture'] if profile_data else None,
-            'allergies': diet_pref_data['allergies'] if diet_pref_data else None,
-            'dietary_goal': diet_pref_data['dietary_goal'] if diet_pref_data else None
+            'username': profile_data['username'],
+            'full_name': profile_data['full_name'],
+            'age': profile_data['age'],
+            'gender': profile_data['gender'],
+            'height': profile_data['height'],
+            'weight': profile_data['weight'],
+            'bmi': profile_data['bmi'],
+            'location': profile_data['location'],
+            'profile_picture': profile_data['profile_picture'],
+            'allergies': profile_data['allergies'],
+            'dietary_goal': profile_data['dietary_goal'],
+            'goal_type': goal_data['goal_type'] if goal_data else None,
+            'target_value': goal_data['target_value'] if goal_data else None,
+            'current_value': goal_data['current_value'] if goal_data else None,
+            'goal_status': goal_data['status'] if goal_data else None
         }
 
         return jsonify(response_data), 200
