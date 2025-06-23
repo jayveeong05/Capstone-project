@@ -695,20 +695,6 @@ Future<void> _fetchUserPlansWithProgress() async {
                     // TODO: Navigate to Meal Library
                     print('Navigate to Meal Library');
                   }),
-                  _buildUtilityCard(
-                      Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () {
-                    // TODO: Open Chatbot
-                    //print('Open Chatbot');
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (context) => ChatbotPage(userId: 'user123'),
-                    ));
-                  }),
-                  _buildUtilityCard(
-                      Icons.gps_fixed, 'Grocery Locator', Colors.blueGrey, () {
-                    // TODO: Navigate to Grocery Shop Locator
-                    print('Navigate to Grocery Locator');
-                    Navigator.pushNamed(context, '/groceryLocator');
-                  }),
                 ],
               ),
               const SizedBox(height: 20), // Added buffer at the very bottom
@@ -740,21 +726,22 @@ Future<void> _fetchUserPlansWithProgress() async {
               break;
             case 2: // Progress
               // TODO: Navigate to Detailed Progress Tracking page
-              print('Navigated to Progress');
-              Navigator.of(context).pushNamed('/progress'); // Assuming a '/progress' route
+              print('Navigated to AI Chatbot');
+              Navigator.push(context, MaterialPageRoute(
+                builder: (context) => ChatbotPage(userId: 'user123'), // Replace with actual user ID
+              ));
               break;
-            case 3: // Settings (aligned with Profile in this case)
-              // TODO: Navigate to Settings/Profile page
-              print('Navigated to Settings');
-              Navigator.of(context).pushNamed('/profile'); // Assuming '/profile' route
+            case 3: // groceryLocator (aligned with Grocery Locator in this case)
+              print('Navigated to groceryLocator');
+              Navigator.of(context).pushNamed('/groceryLocator'); // Assuming '/groceryLocator' route
               break;
           }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.tune_outlined), activeIcon: Icon(Icons.tune), label: 'Customize'), // Changed label to 'Customize', and icon to tune_outlined/tune
-          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), activeIcon: Icon(Icons.insights), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings), label: 'Settings'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat_outlined), activeIcon: Icon(Icons.chat), label: 'AI Chatbot'),
+          BottomNavigationBarItem(icon: Icon(Icons.location_on_outlined), activeIcon: Icon(Icons.location_on), label: 'Grocery Locator'),
         ],
       ),
     );
