@@ -1,4 +1,6 @@
 // profile_page.dart
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -28,6 +30,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   String? _selectedFeedbackCategory; // New for feedback category
   String? _userId; // To store the logged-in user's ID
+  String? _profilePictureBase64;
 
   bool _isLoading = true;
   bool _isEditing = false;
@@ -81,6 +84,8 @@ class _ProfilePageState extends State<ProfilePage> {
       _allergiesController.text = prefs.getString('allergies') ?? '';
       _fitnessGoalsController.text = prefs.getString('dietary_goal') ?? '';
 
+      _profilePictureBase64 = prefs.getString('profile_picture');
+
       _isLoading = false;
     });
     
@@ -105,6 +110,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _locationController.text = data['location'] ?? '';
           _allergiesController.text = data['allergies'] ?? '';
           _fitnessGoalsController.text = data['dietary_goal'] ?? '';
+          _profilePictureBase64 = data['profile_picture']; 
         });
         SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setString('username', data['username'] ?? 'User');
@@ -114,6 +120,7 @@ class _ProfilePageState extends State<ProfilePage> {
         await prefs.setString('location', data['location'] ?? '');
         await prefs.setString('allergies', data['allergies'] ?? '');
         await prefs.setString('dietary_goal', data['dietary_goal'] ?? '');
+        await prefs.setString('profile_picture', data['profile_picture'] ?? '');
       } else {
         _showSnackBar('Failed to load profile data from backend.', Colors.red);
       }
@@ -147,6 +154,7 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setString('location', _locationController.text);
     await prefs.setString('allergies', _allergiesController.text);
     await prefs.setString('dietary_goal', _fitnessGoalsController.text);
+    await prefs.setString('profile_picture', _profilePictureBase64 ?? '');
 
     setState(() => _isEditing = false);
 
@@ -227,6 +235,82 @@ class _ProfilePageState extends State<ProfilePage> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildProfileAvatar() {
+    Widget avatarImage;
+
+    if (_profilePictureBase64 != null && _profilePictureBase64!.isNotEmpty) {
+      try {
+        // Attempt to decode as base64
+        Uint8List bytes = base64Decode(_profilePictureBase64!);
+        avatarImage = Image.memory(
+          bytes,
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // Fallback if base64 decoding fails at runtime for some reason
+            return Image.asset(
+              'lib/assets/images/user_avatar.png',
+              width: 120,
+              height: 120,
+              fit: BoxFit.cover,
+            );
+          },
+        );
+      } catch (e) {
+        // If base64 decoding fails, check if it's an asset path
+        if (_profilePictureBase64!.startsWith('backend/users_avatar/') || _profilePictureBase64!.startsWith('users_avatar/')) {
+          // Assume it's an asset path
+          avatarImage = Image.asset(
+            _profilePictureBase64!,
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              // Fallback if asset loading fails
+              return Image.asset(
+                'lib/assets/images/user_avatar.png',
+                width: 120,
+                height: 120,
+                fit: BoxFit.cover,
+              );
+            },
+          );
+        } else {
+          // If not base64 and not a recognized asset path, fall back to default
+          avatarImage = Image.asset(
+            'lib/assets/images/user_avatar.png',
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+          );
+        }
+      }
+    } else {
+      // If _profilePictureBase64 is null or empty, use default avatar
+      avatarImage = Image.asset(
+        'lib/assets/images/user_avatar.png',
+        width: 120,
+        height: 120,
+        fit: BoxFit.cover,
+      );
+    }
+
+    return Center(
+      child: Stack(
+        children: [
+          CircleAvatar(
+            radius: 60,
+            backgroundColor: _primaryColor.withOpacity(0.1),
+            child: ClipOval( // Ensure the image is circular
+              child: avatarImage,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -411,7 +495,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 children: [
                   // Profile Header with Avatar
-                  _buildProfileHeader(),
+                  _buildProfileAvatar(),
                   const SizedBox(height: 32),
                   // Personal Info Section
                   _buildSection(
