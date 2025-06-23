@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+<!-- Permissions -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="frontend"
         android:name="${applicationName}"
@@ -31,6 +35,9 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyB35FpbKNByelQDc_uV64iYfBeBHkNak2U"/>
     </application>
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Required to query activities that can process text, see:

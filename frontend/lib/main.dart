@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/GroceryShopLocator.dart';
 import 'package:frontend/pages/admin_feedback_overview.dart';
 import 'package:frontend/pages/admin_registered_user_overview.dart';
 import 'package:frontend/pages/admin_user_activity_monitoring.dart';
@@ -51,6 +52,7 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => SignUpPage(),
         '/mainpage': (context) => MainPage(),
         '/profile': (context) => ProfilePage(),
+        '/groceryLocator': (context) => GroceryShopLocator(),
         '/admin_registered_user_overview': (context) => AdminRegisteredUserOverview(),
         '/admin_user_activity_monitoring': (context) => AdminUserActivityMonitoring(),
         '/admin_feedback_overview': (context) => AdminFeedbackOverview(),

@@ -707,6 +707,7 @@ Future<void> _fetchUserPlansWithProgress() async {
                       Icons.gps_fixed, 'Grocery Locator', Colors.blueGrey, () {
                     // TODO: Navigate to Grocery Shop Locator
                     print('Navigate to Grocery Locator');
+                    Navigator.pushNamed(context, '/groceryLocator');
                   }),
                 ],
               ),
