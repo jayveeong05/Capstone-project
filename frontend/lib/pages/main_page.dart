@@ -607,7 +607,7 @@ Future<void> _fetchUserPlansWithProgress() async {
                       MaterialPageRoute(builder: (context) => const MealScannerScreen(userId: 'user123')), // TODO: Replace with actual user ID
                     );
                   }),
-                  _buildQuickActionButton(Icons.add_task, 'Youtube', () {
+                  _buildQuickActionButton(Icons.play_circle_filled, 'Youtube', () {
                     _launchYouTube('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
                   }),
                 ],
