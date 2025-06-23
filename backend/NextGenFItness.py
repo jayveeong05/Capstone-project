@@ -799,7 +799,7 @@ def scan_meal():
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('''
-            INSERT INTO MealScan (meal_scan_id, user_id, image_path, food_name, calories, nutrients)
+            INSERT INTO MealScans (meal_scan_id, user_id, image_path, food_name, calories, nutrients)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (meal_scan_id, user_id, file_path, food_name, calories, json.dumps(nutrients)))
         conn.commit()

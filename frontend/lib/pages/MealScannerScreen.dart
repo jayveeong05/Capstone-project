@@ -1,12 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/MealScanHistoryScreen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class MealScannerScreen extends StatefulWidget {
   final String userId;
-  const MealScannerScreen({Key? key, required this.userId}) : super(key: key);
+  const MealScannerScreen({super.key, required this.userId});
 
   @override
   State<MealScannerScreen> createState() => _MealScannerScreenState();
@@ -104,7 +105,7 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                 Card(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 3,
-                  child: Container(
+                  child: SizedBox(
                     height: 200,
                     width: double.infinity,
                     child: _selectedImage != null
@@ -156,6 +157,25 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                     ),
                   ],
                 ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.history),
+                  label: const Text('View History'),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    backgroundColor: Colors.deepPurple[50],
+                    foregroundColor: Colors.deepPurple,
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => MealScanHistoryScreen(userId: widget.userId),
+                      ),
+                    );
+                  },
+                ),
+
                 const SizedBox(height: 24),
                 if (_scanResult != null)
                   Expanded(
