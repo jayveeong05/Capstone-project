@@ -7,7 +7,7 @@ import 'MealPlansPage.dart';
 import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
 import 'diet_plan_page.dart'; 
-import 'MealLoggingPage.dart';
+import 'MealLogHistoryPage.dart';
 import 'package:http/http.dart'as http;
 import 'dart:convert';
 import 'dart:io';
@@ -600,13 +600,18 @@ Future<void> _fetchUserPlansWithProgress() async {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
-                  _buildQuickActionButton(Icons.restaurant_menu, 'Log Meal', () {
-                    // Navigator.push(
-                    //   context,
-                    //   MaterialPageRoute(builder: (context) => const MealLoggingPage()),
-                    // );
-                    print('Log Meal');
-                  }),
+                  _buildQuickActionButton(
+                    Icons.restaurant_menu,
+                    'Log Meal',
+                    () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const MealLogHistoryPage(), 
+                        ),
+                      );
+                    },
+                  ),
                   _buildQuickActionButton(Icons.mic, 'Voice Log', () {
                     // TODO: Activate Voice Logging
                     print('Activate Voice Log');

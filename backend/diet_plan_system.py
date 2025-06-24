@@ -76,7 +76,7 @@ class DietPlanSystem:
             meal_name = data['meal_name']
             calories = float(data['calories'])
             notes = data.get('notes', '')
-            log_date = date.today()
+            log_date = date.today().isoformat()  # Use today's date for logging
 
             if user_id.isdigit():
                 user_id = f"U{int(user_id):03d}"
@@ -84,9 +84,21 @@ class DietPlanSystem:
             conn = self.get_db_connection()
             c = conn.cursor()
 
-            # Ensure there's a progress row for today
+            # Determine diet_plan_id ---
+            diet_plan_id = data.get('diet_plan_id') # Try to get from the request first
+            if not diet_plan_id:
+                # If not provided by frontend, fetch the user's latest (active) diet plan
+                c.execute("SELECT diet_plan_id FROM DietPlan WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
+                latest_diet_plan = c.fetchone()
+                if latest_diet_plan:
+                    diet_plan_id = latest_diet_plan['diet_plan_id']
+                else:
+                    # If no diet plan is found, return an error as it's a NOT NULL constraint
+                    return {'success': False, 'error': 'No active diet plan found for this user. Please create a diet plan first.'}
+
+            # Ensure there's a progress row for today for the given user and diet_plan
             c.execute("""
-                SELECT * FROM UserDietPlanProgress
+                SELECT progress_id, calories_consumed, meals_completed FROM UserDietPlanProgress
                 WHERE user_id = ? AND diet_plan_id = ? AND date = ?
             """, (user_id, diet_plan_id, log_date))
 
@@ -127,8 +139,157 @@ class DietPlanSystem:
             }
 
         except Exception as e:
+            conn.rollback() # Important: Rollback on error
+            print(f"Error logging meal: {e}") # Print error for debugging
             return {'success': False, 'error': str(e)}
+        
+    def _update_daily_progress(self, user_id, log_date):
+        """
+        Recalculates total calories for a given user and date,
+        and updates UserDietPlanProgress.
+        log_date should be in 'YYYY-MM-DD' format.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
 
+        try:
+            # Calculate total calories from all meals logged for this user on this date
+            c.execute("""
+                SELECT SUM(calories) AS total_calories
+                FROM LoggedMeal
+                WHERE user_id = ? AND date(created_at) = ?
+            """, (user_id, log_date))
+            
+            result = c.fetchone()
+            new_total_calories = result['total_calories'] if result and result['total_calories'] is not None else 0
+
+            # Get or create progress entry for the date
+            c.execute("SELECT progress_id FROM UserDietPlanProgress WHERE user_id = ? AND date = ?",
+                      (user_id, log_date))
+            progress_entry = c.fetchone()
+
+            if progress_entry:
+                # Update existing progress entry
+                c.execute("""
+                    UPDATE UserDietPlanProgress
+                    SET calories_consumed = ?
+                    WHERE progress_id = ?
+                """, (new_total_calories, progress_entry['progress_id']))
+                print(f"Updated progress for {user_id} on {log_date} to {new_total_calories} calories.")
+            else:
+                # This should ideally not happen if meals are logged correctly,
+                # but handle if a meal is added to a day without a progress record.
+                # Find an existing diet plan for the user or default
+                c.execute("SELECT diet_plan_id FROM DietPlan WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
+                diet_plan_id_row = c.fetchone()
+                
+                if not diet_plan_id_row:
+                    raise Exception("No active diet plan found for user. Cannot update progress.")
+                
+                diet_plan_id = diet_plan_id_row['diet_plan_id']
+                progress_id = f"PRG{int(uuid.uuid4().hex[:8], 16):08d}" # Generate unique progress ID
+
+                c.execute("""
+                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (progress_id, user_id, diet_plan_id, log_date, new_total_calories, datetime.now().isoformat()))
+                print(f"Created new progress entry for {user_id} on {log_date} with {new_total_calories} calories.")
+
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f"Error updating daily progress for {user_id} on {log_date}: {e}")
+            raise # Re-raise the exception to be caught by the route handler
+        finally:
+            conn.close()
+
+    def delete_logged_meal(self, meal_id):
+        """
+        Deletes a logged meal entry and updates daily progress.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            # Get meal details before deleting to update progress
+            c.execute("SELECT user_id, date(created_at) AS log_date FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
+            meal_info = c.fetchone()
+
+            if not meal_info:
+                return {'success': False, 'error': 'Meal not found.'}
+
+            user_id = meal_info['user_id']
+            log_date = meal_info['log_date']
+
+            c.execute("DELETE FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
+            conn.commit()
+
+            # Now, update the user's daily progress for that date
+            self._update_daily_progress(user_id, log_date)
+
+            return {'success': True, 'message': 'Meal deleted successfully.'}
+        except Exception as e:
+            conn.rollback()
+            print(f"Error deleting meal {meal_id}: {e}")
+            return {'success': False, 'error': f'Failed to delete meal: {str(e)}'}
+        finally:
+            conn.close()
+
+    def update_logged_meal(self, meal_id, updated_data):
+        """
+        Updates an existing logged meal entry and recalculates daily progress.
+        updated_data can contain meal_type, meal_name, calories, notes.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            # Get original meal info to determine if date changed (unlikely with this UI but good to get)
+            # and to get user_id and old_calories for progress update context
+            c.execute("SELECT user_id, calories, date(created_at) AS log_date FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
+            original_meal_info = c.fetchone()
+
+            if not original_meal_info:
+                return {'success': False, 'error': 'Meal not found.'}
+
+            user_id = original_meal_info['user_id']
+            original_log_date = original_meal_info['log_date']
+
+            # Build update query dynamically
+            set_clauses = []
+            values = []
+            
+            if 'meal_type' in updated_data:
+                set_clauses.append("meal_type = ?")
+                values.append(updated_data['meal_type'])
+            if 'meal_name' in updated_data:
+                set_clauses.append("meal_name = ?")
+                values.append(updated_data['meal_name'])
+            if 'calories' in updated_data:
+                set_clauses.append("calories = ?")
+                values.append(updated_data['calories'])
+            if 'notes' in updated_data:
+                set_clauses.append("notes = ?")
+                values.append(updated_data['notes'])
+            
+            if not set_clauses:
+                return {'success': False, 'error': 'No fields to update provided.'}
+
+            query = f"UPDATE LoggedMeal SET {', '.join(set_clauses)} WHERE meal_id = ?"
+            values.append(meal_id)
+
+            c.execute(query, tuple(values))
+            conn.commit()
+
+            # Recalculate and update the user's daily progress for the original date
+            self._update_daily_progress(user_id, original_log_date)
+
+            return {'success': True, 'message': 'Meal updated successfully.'}
+        except Exception as e:
+            conn.rollback()
+            print(f"Error updating meal {meal_id}: {e}")
+            return {'success': False, 'error': f'Failed to update meal: {str(e)}'}
+        finally:
+            conn.close()
     
     def get_user_dietary_preferences(self, user_id):
         """Get user's dietary preferences and goals"""
@@ -1049,6 +1210,26 @@ def setup_diet_plan_routes(app, diet_system):
         
         except Exception as e:
             return jsonify({'error': f'Failed to fetch recipe suggestions: {str(e)}'}), 500
+        
+    @app.route('/api/recipe-details', methods=['GET'])
+    def get_recipe_details():
+        title = request.args.get('title')
+        if not title:
+            return jsonify({'error': 'Missing title'}), 400
+
+        conn = diet_system.get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT nutrition_info FROM RecipeLibrary WHERE LOWER(title) = LOWER(?)", (title.lower(),))
+        row = c.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'error': 'Recipe not found'}), 404
+
+        nutrition = json.loads(row['nutrition_info']) if row['nutrition_info'] else {}
+        return jsonify({
+            'calories': nutrition.get('calories', 0)
+        }), 200
 
         
     @app.route('/api/log-meal', methods=['POST'])
@@ -1062,18 +1243,19 @@ def setup_diet_plan_routes(app, diet_system):
     def get_logged_meals_route(user_id):
         """Get user's logged meal history, grouped by date"""
         try:
-            if user_id.isdigit():
+                # Normalize user_id: handle int or string
+            if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
                 user_id = f"U{int(user_id):03d}"
 
             conn = diet_system.get_db_connection()
             c = conn.cursor()
 
             c.execute("""
-                SELECT meal_id, diet_plan_id, meal_type, meal_name, calories, notes, created_at, date(lp.date) AS log_date
+                SELECT meal_id, lm.diet_plan_id, meal_type, meal_name, calories, lm.notes, lm.created_at, date(lp.date) AS log_date
                 FROM LoggedMeal lm
                 LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
                 WHERE lm.user_id = ?
-                ORDER BY log_date DESC, created_at DESC
+                ORDER BY log_date DESC, lm.created_at DESC
             """, (user_id,))
 
             rows = c.fetchall()
@@ -1104,6 +1286,18 @@ def setup_diet_plan_routes(app, diet_system):
         except Exception as e:
             return jsonify({'success': False, 'error': f'Failed to fetch logged meals: {str(e)}'}), 500
 
+    @app.route('/api/logged-meal/<meal_id>', methods=['DELETE'])
+    def delete_meal_route(meal_id):
+        """API route to delete a user meal"""
+        result = diet_system.delete_logged_meal(meal_id)
+        return jsonify(result), 200 if result.get('success') else 500
+
+    @app.route('/api/logged-meal/<meal_id>', methods=['PUT'])
+    def update_meal_route(meal_id):
+        """API route to update a user meal"""
+        data = request.get_json()
+        result = diet_system.update_logged_meal(meal_id, data)
+        return jsonify(result), 200 if result.get('success') else 500
 
 
 
