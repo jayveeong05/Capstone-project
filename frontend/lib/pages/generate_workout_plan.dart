@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'view_workoutplan_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
+
+import 'view_workoutplan_page.dart';
 
 class GenerateWorkoutPlanPage extends StatefulWidget {
+  final int userId;
+  const GenerateWorkoutPlanPage({required this.userId});
+
   @override
-  _GenerateWorkoutPlanPageState createState() => _GenerateWorkoutPlanPageState();
+  State<GenerateWorkoutPlanPage> createState() => _GenerateWorkoutPlanPageState();
 }
 
 class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
@@ -16,6 +21,8 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
   String? selectedMuscle;
   String? selectedCategory;
   double durationMonths = 3;
+  DateTime? selectedStartDate;
+  bool _isLoading = false;
 
   final levels = ['beginner', 'intermediate', 'expert'];
   final mechanics = ['null', 'isolation', 'compound'];
@@ -34,81 +41,97 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
   ];
 
   Future<void> _generatePlan() async {
-  final prefs = await SharedPreferences.getInstance();
-  final userId = prefs.getInt('user_id');
-  
-  if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("User ID not found. Please log in again.")),
-      );
-      return;
-  }
-  final preferences = {
-    'user_id': userId,
-    'level': selectedLevel,
-    'mechanic': selectedMechanic,
-    'equipment': selectedEquipment,
-    'primaryMuscles': selectedMuscle,
-    'category': selectedCategory,
-    'duration': durationMonths.toInt(),
-  };
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('user_id');
 
-  try {
-    final response = await http.post(
-      Uri.parse('http://10.0.2.2:5000/generate-plan'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(preferences),
-    );
-
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body);
-
-      final planId = json['plan_id']; // 👈 Make sure you extract this 
-
-      if (planId == null) {
-        print("No plan ID available");
+    if (userId == null) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to retrieve plan ID.")),
+          SnackBar(content: Text("User ID not found. Please log in again.")),
         );
-        return;
       }
-
-      // Show success dialog before redirecting
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text("Success"),
-          content: Text("Workout plan generated successfully!"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close dialog
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ViewWorkoutPlanPage(
-                      planId: json['plan_id'],
-                    ),
-                  ),
-                );
-              },
-              child: Text("OK"),
-            ),
-          ],
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to generate plan.")),
-      );
+      return;
     }
-  } catch (e) {
-    print("Error: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("An error occurred: $e")),
-    );
+
+    final preferences = {
+      'user_id': userId,
+      'level': selectedLevel,
+      'mechanic': selectedMechanic,
+      'equipment': selectedEquipment,
+      'primaryMuscle': selectedMuscle,
+      'category': selectedCategory,
+      'duration': durationMonths.toInt(),
+    };
+
+    if (selectedStartDate != null) {
+      preferences['start_date'] = DateFormat('yyyy-MM-dd').format(selectedStartDate!);
+    }
+
+    try {
+      setState(() => _isLoading = true);
+
+      final response = await http.post(
+        Uri.parse('http://10.0.2.2:5000/generate-plan'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(preferences),
+      );
+
+      setState(() => _isLoading = false);
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final planId = json['plan_id'];
+
+        if (planId == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Failed to retrieve plan ID.")),
+            );
+          }
+          return;
+        }
+
+        // ✅ SAFELY handle dialog and navigation using `.then`
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text("Success"),
+            content: Text("Workout plan generated successfully!"),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context, rootNavigator: true).pop();
+                },
+                child: Text("OK"),
+              ),
+            ],
+          ),
+        ).then((_) {
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewWorkoutPlanPage(planId: planId),
+              ),
+            );
+          }
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to generate plan.")),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("An error occurred: $e")),
+        );
+      }
+    }
   }
-}
 
   Widget _buildDropdown(String label, List<String> options, String? selectedValue, void Function(String?) onChanged) {
     return DropdownButtonFormField<String>(
@@ -132,6 +155,25 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
             _buildDropdown("Equipment", equipmentList, selectedEquipment, (val) => setState(() => selectedEquipment = val)),
             _buildDropdown("Primary Muscle", muscles, selectedMuscle, (val) => setState(() => selectedMuscle = val)),
             _buildDropdown("Category", categories, selectedCategory, (val) => setState(() => selectedCategory = val)),
+
+            SizedBox(height: 20),
+            ListTile(
+              title: Text(selectedStartDate == null
+                  ? "Select Start Date"
+                  : "Start Date: ${DateFormat('yyyy-MM-dd').format(selectedStartDate!)}"),
+              trailing: Icon(Icons.calendar_today),
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(Duration(days: 365)),
+                );
+                if (picked != null) {
+                  setState(() => selectedStartDate = picked);
+                }
+              },
+            ),
             SizedBox(height: 20),
             Text("Plan Duration (Months): ${durationMonths.toInt()}"),
             Slider(
@@ -143,10 +185,12 @@ class _GenerateWorkoutPlanPageState extends State<GenerateWorkoutPlanPage> {
               label: "${durationMonths.toInt()} months",
             ),
             SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _generatePlan,
-              child: Text("Generate Plan"),
-            ),
+            _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : ElevatedButton(
+                    onPressed: _generatePlan,
+                    child: Text("Generate Plan"),
+                  ),
           ],
         ),
       ),

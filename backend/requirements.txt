@@ -5,3 +5,4 @@ clarifai
 pillow
 requests
 google-generativeai
+python-dateutil

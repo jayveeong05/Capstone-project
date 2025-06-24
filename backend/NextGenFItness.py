@@ -1,5 +1,5 @@
 from json import scanner
-from flask import Flask, request, jsonify,send_from_directory
+from flask import Flask, request, jsonify,send_from_directory,current_app
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -8,6 +8,7 @@ import base64
 import re # Import the re module for regeximport os
 import random
 import os
+import shutil
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -15,11 +16,11 @@ from typing import Dict, List, Optional, Tuple
 import io
 from PIL import Image
 import requests
-import os
 from food_recognition import FoodRecognition
 from diet_plan_system import DietPlanSystem, integrate_diet_system_with_app, setup_diet_plan_routes
-import os
 import google.generativeai as genai
+from dateutil.relativedelta import relativedelta
+from collections import Counter
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXERCISE_FOLDER = os.path.join(BASE_DIR, 'exercises')
@@ -126,6 +127,17 @@ def init_db():
                 image_path TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
+    
+    # Create Feedback table
+    c.execute('''CREATE TABLE IF NOT EXISTS Feedback (
+                feedback_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                submitted_at DATE,
+                category TEXT,
+                feedback_text TEXT,
+                status TEXT,
+                FOREIGN KEY (user_id) REFERENCES User(user_id)
+            )''')
                 
     conn.commit()
     conn.close()
@@ -183,6 +195,32 @@ def generate_diet_pref_id():
     else:
         return 'UDP001'
 
+def generate_feedback_id():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT feedback_id FROM Feedback ORDER BY feedback_id DESC LIMIT 1")
+    last_id_row = c.fetchone()
+    conn.close()
+    if last_id_row:
+        last_id = last_id_row['feedback_id']
+        numeric_part = int(last_id[1:]) + 1
+        return f'F{numeric_part:03d}'
+    else:
+        return 'F001'
+
+def generate_log_id(): #
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT log_id FROM SystemLog ORDER BY log_id DESC LIMIT 1")
+    last_id_row = c.fetchone()
+    conn.close()
+    if last_id_row:
+        last_id = last_id_row['log_id']
+        numeric_part = int(last_id[1:]) + 1
+        return f'L{numeric_part:03d}'
+    else:
+        return 'L001'
+
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
@@ -202,7 +240,23 @@ def signup():
 
     if not all([username, email, password_raw, gender, weight, height, age, main_goal, target_weight]):
         return jsonify({'error': 'Missing required fields for signup (username, email, password, gender, weight, height, age, goal, target_weight)'}), 400
+    
+    # Username length validation
+    if len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters long.'}), 400
 
+    # Username character validation: Allow only alphanumeric characters and underscores
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        return jsonify({'error': 'Username can only contain alphanumeric characters and underscores.'}), 400
+
+    # Username leading/trailing underscore validation
+    if username.startswith('_') or username.endswith('_'):
+        return jsonify({'error': 'Username cannot start or end with an underscore.'}), 400
+
+    # Username consecutive underscore validation
+    if '_' in username:
+        return jsonify({'error': 'Username cannot contain consecutive underscores.'}), 400
+    
     # Email format validation
     # This regex covers most common email formats.
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -271,7 +325,6 @@ def signup():
     finally:
         conn.close()
 
-
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -280,19 +333,77 @@ def login():
 
     conn = get_db_connection()
     c = conn.cursor()
-    # Fetch role along with other user data
+    
+    # Fetch user info
     c.execute("SELECT user_id, password, role FROM User WHERE username = ?", (username,))
     user = c.fetchone()
-    conn.close()
-
+    
     if user and check_password_hash(user['password'], password):
-        # Return role in the response
+        # Handle banned and maintenance users
+        if user['role'] == 2:
+            conn.close()
+            return jsonify({'error': 'Your account has been disabled. Please contact support.'}), 403
+        if user['role'] == 3 and user['role'] != 0:
+            conn.close()
+            return jsonify({'error': 'System is currently under maintenance. Please try again later.'}), 403
+
+        user_id = user['user_id']
+        
+        # Log login attempt
+        try:
+            log_id = generate_log_id()
+            action = "Logged In"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            c.execute(
+                "INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)",
+                (log_id, user_id, action, timestamp)
+            )
+        except Exception as e:
+            print(f"Error logging login activity: {e}")
+            # Still allow login to proceed
+
+        # 🔁 Auto-update progress for all workout plans of this user
+            try:
+                today = datetime.now().strftime("%Y-%m-%d")
+
+                # ✅ Get latest plan for the user
+                c.execute("""
+                    SELECT * FROM WorkoutPlan 
+                    WHERE user_id = ? 
+                    ORDER BY plan_id DESC 
+                    LIMIT 1
+                """, (user_id,))
+                latest_plan = c.fetchone()
+
+                latest_plan_id = latest_plan['plan_id'] if latest_plan else None
+
+                # ✅ Get today's workout exercises for that plan
+                today_exercises = []
+                if latest_plan_id:
+                    c.execute("""
+                        SELECT e.Exercise_ID, e.name, e.primaryMuscles, e.instructions
+                        FROM WorkoutPlanExercise wpe
+                        JOIN Exercise e ON e.Exercise_ID = wpe.Exercise_ID
+                        WHERE wpe.plan_id = ? AND wpe.date = ?
+                    """, (latest_plan_id, today))
+                    today_exercises = [dict(row) for row in c.fetchall()]
+
+                # ✅ Return with login response
+            except Exception as e:
+                print(f"❌ Error fetching today's workout: {e}")
+                today_exercises = []
+                latest_plan_id = None
+
+        conn.commit()
+        conn.close()
         return jsonify({
             'message': 'Login successful',
-            'user_id': user['user_id'],
-            'role': user['role']  # Add role to response
+            'user_id': user_id,
+            'role': user['role']
         }), 200
+
     else:
+        conn.close()
         return jsonify({'error': 'Invalid username or password'}), 401
 
 @app.route('/forgot-password', methods=['POST'])
@@ -313,6 +424,10 @@ def forgot_password():
 
 @app.route('/reset-password', methods=['POST'])
 def reset_password():
+    """
+    This endpoint is for generic password resets (e.g., from a 'forgot password' flow)
+    where the current password is NOT required.
+    """
     data = request.get_json()
     email = data.get('email')
     new_password = data.get('new_password')
@@ -324,11 +439,80 @@ def reset_password():
 
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute("UPDATE User SET password = ? WHERE email = ?", (hashed_password, email))
+        if c.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'User with provided email not found'}), 404
+        conn.commit()
+        return jsonify({'message': 'Password has been successfully updated'}), 200
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating password: {e}")
+        return jsonify({'error': 'Internal server error during password update'}), 500
+    finally:
+        conn.close()
 
-    return jsonify({'message': 'Password has been successfully updated'}), 200
+# NEW ENDPOINT: Reset password from profile page (requires current password verification)
+@app.route('/api/profile/reset-password', methods=['POST'])
+def profile_reset_password():
+    """
+    API endpoint for users to reset their password from the profile page.
+    Requires user_id, current_password, and new_password.
+    Verifies the current password before updating.
+    """
+    data = request.get_json()
+    user_id = data.get('user_id')
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    # Input validation
+    if not all([user_id, current_password, new_password]):
+        return jsonify({'error': 'Missing required fields: user_id, current_password, and new_password'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters long.'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Retrieve user's current hashed password from the database
+        cursor.execute("SELECT password FROM User WHERE user_id = ?", (user_id,))
+        user_row = cursor.fetchone()
+
+        if not user_row:
+            return jsonify({'error': 'User not found'}), 404
+
+        stored_hashed_password = user_row['password']
+
+        # Verify the provided current password against the stored hashed password
+        if not check_password_hash(stored_hashed_password, current_password):
+            return jsonify({'error': 'Invalid current password'}), 401
+
+        # Hash the new password
+        hashed_new_password = generate_password_hash(new_password)
+
+        # Update the password in the database
+        cursor.execute("UPDATE User SET password = ? WHERE user_id = ?", (hashed_new_password, user_id))
+        conn.commit()
+
+        return jsonify({'message': 'Password reset successfully!'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in profile_reset_password: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in profile_reset_password: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/profile', methods=['POST'])
 def save_profile():
@@ -417,7 +601,6 @@ def search_exercises():
 
 @app.route('/exercises')
 def get_exercises():
-    import os
 
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 10))
@@ -482,25 +665,20 @@ def get_exercises():
 
     return jsonify({'exercises': exercises})
 
-@app.route('/generate-plan', methods=['POST'])
-def generate_workout_plan():
-    data = request.get_json()
+#customize-exercise-libray
+@app.route('/exercise-library', methods=['GET'])
+def get_exercise_library():
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    offset = (page - 1) * per_page
 
-    user_id = str(data.get('user_id'))
-    level = data.get('level')
-    mechanic = data.get('mechanic')
-    equipment = data.get('equipment')
-    primaryMuscle = data.get('primaryMuscle')
-    category = data.get('category')
-    duration_months = data.get('duration', 3)
+    # Filters
+    level = request.args.get('level')
+    mechanic = request.args.get('mechanic')
+    equipment = request.args.get('equipment')
+    primary_muscle = request.args.get('primaryMuscle')
+    category = request.args.get('category')
 
-    if user_id.isdigit():
-        user_id = f"U{int(user_id):03d}"  # pad to 3 digits with U prefix
-
-    if not user_id:
-        return jsonify({'error': 'user_id is required'}), 400
-
-    # Build dynamic query
     query = "SELECT * FROM Exercise WHERE 1=1"
     params = []
 
@@ -513,15 +691,88 @@ def generate_workout_plan():
     if equipment:
         query += " AND equipment = ?"
         params.append(equipment)
+    if primary_muscle:
+        query += " AND primaryMuscles LIKE ?"
+        params.append(f"%{primary_muscle}%")
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+
+    query += " LIMIT ? OFFSET ?"
+    params.extend([per_page, offset])
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    exercises = []
+    for row in rows:
+        ex = dict(row)
+        folder_name = ex['name'].replace('/', '_').replace(' ', '_')
+        image_dir = os.path.join(EXERCISE_FOLDER, folder_name)
+        image_urls = []
+
+        if os.path.exists(image_dir):
+            for filename in sorted(os.listdir(image_dir)):
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    image_urls.append(f'/exercise-images/{folder_name}/{filename}')
+        ex['image_urls'] = image_urls
+
+        # Convert instructions to list
+        if isinstance(ex['instructions'], str):
+            ex['instructions'] = [s.strip() for s in ex['instructions'].split('.') if s.strip()]
+
+        exercises.append(ex)
+
+    return jsonify({'exercises': exercises})
+
+@app.route('/generate-plan', methods=['POST'])
+def generate_workout_plan():
+    data = request.get_json()
+
+    user_id = str(data.get('user_id'))
+    level = data.get('level')
+    mechanic = data.get('mechanic')
+    equipment = data.get('equipment')
+    primaryMuscle = data.get('primaryMuscle')
+    category = data.get('category')
+    duration_months = data.get('duration', 3)
+    start_date_str = data.get('start_date')  # Optional: "2025-06-23"
+
+    if user_id.isdigit():
+        user_id = f"U{int(user_id):03d}"
+
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+
+    query = "SELECT * FROM Exercise WHERE 1=1"
+    params = []
+
+    if level:
+        query += " AND level = ?"
+        params.append(level)
+    if mechanic:
+        query += " AND mechanic = ?"
+        params.append(mechanic)
+    if equipment:
+        if equipment == 'null':
+            query += " AND equipment IS NULL"
+        else:
+            query += " AND equipment = ?"
+            params.append(equipment)
     if primaryMuscle:
-        query += " AND primaryMuscles = ?"
-        params.append(primaryMuscle)
+        query += " AND primaryMuscles LIKE ?"
+        params.append(f"%{primaryMuscle}%")
     if category:
         query += " AND category = ?"
         params.append(category)
 
     conn = get_db_connection()
     cur = conn.cursor()
+    print("Running query:", query)
+    print("With parameters:", params)
     cur.execute(query, params)
     rows = cur.fetchall()
 
@@ -532,42 +783,77 @@ def generate_workout_plan():
     exercises = [dict(row) for row in rows]
     random.shuffle(exercises)
 
-    total_days = duration_months * 4 * 3
-    plan = exercises[:total_days]
+    total_workout_days = duration_months * 4 * 3  # 3 days/week × 4 weeks/month
+    exercises_per_day = 3
+    total_exercises_needed = total_workout_days * exercises_per_day
 
-    # Group into weeks/days
-    plan_by_weeks = {}
-    for i in range(0, len(plan), 3):
-        week = i // 3 + 1
-        plan_by_weeks.setdefault(f'Week {week}', []).extend(plan[i:i + 3])
+    plan = []
+    while len(plan) < total_exercises_needed:
+        plan.extend(exercises)
+    plan = plan[:total_exercises_needed]
 
-    # Insert into WorkoutPlan with plan_data
+    # Set the start date
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({'error': 'Invalid start_date format. Use %Y-%m-%d'}), 400
+    else:
+        start_date = datetime.today()
+
+    # Insert into WorkoutPlan
     cur.execute(
         "INSERT INTO WorkoutPlan (user_id, duration_months) VALUES (?, ?)",
         (user_id, duration_months)
     )
     plan_id = cur.lastrowid
 
-    # Insert into WorkoutPlanExercise
-    for week_str, exercises_in_week in plan_by_weeks.items():
-        week_number = int(week_str.split()[1])
-        day_number = 1
-        for ex in exercises_in_week:
-            cur.execute('''
-                INSERT INTO WorkoutPlanExercise (plan_id, exercise_id, week_number, day_number)
-                VALUES (?, ?, ?, ?)
-            ''', (plan_id, ex['Exercise_ID'], week_number, day_number))
-            day_number += 1
+    # Insert into WorkoutPlanExercise with actual dates
+    plan_by_dates = {}
+    for day_index in range(total_workout_days):
+        workout_date = start_date + timedelta(days=day_index * 2)  # every 2 days
+        formatted_date = workout_date.strftime("%Y-%m-%d")
 
-    print("Generated plan_id:", plan_id)
+        for j in range(exercises_per_day):
+            exercise_index = day_index * exercises_per_day + j
+            ex = plan[exercise_index]
+
+            cur.execute('''
+                INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
+                VALUES (?, ?, ?)
+            ''', (plan_id, ex['Exercise_ID'], formatted_date))
+
+            plan_by_dates[formatted_date] = plan_by_dates.get(formatted_date, []) + [ex]
+
+    # Create today's reminder if today has exercises in plan
+    today_str = datetime.today().strftime("%Y-%m-%d")
+    created_today_reminder = False
+
+    print("Generated plan dates:", list(plan_by_dates.keys()))
+    print("Today is:", today_str)
+
+    if today_str in plan_by_dates:
+        for ex in plan_by_dates[today_str]:
+            details = f"Don't forget your workout for plan {plan_id} today! 🏋️‍♀️"
+            cur.execute('''
+                INSERT INTO notifications (plan_id, user_id, type, details, checked, exercise_id, date)
+                VALUES (?, ?, 'daily reminder', ?, 0, ?, ?)
+            ''', (plan_id, user_id, details, ex['Exercise_ID'], today_str))
+            created_today_reminder = True
+        print(f"✅ Reminder created for today: {today_str}")
+    else:
+        print(f"❌ No exercises scheduled for today ({today_str}) in the plan.")
+
     conn.commit()
     conn.close()
 
     return jsonify({
-        'message': 'Workout plan generated and saved',
+        'message': 'Workout plan generated and saved with dates',
         'plan_id': plan_id,
-        'plan': plan_by_weeks
+        'created_today_reminder': created_today_reminder,
+        'plan': plan_by_dates
     })
+
 @app.route('/get-plans/<user_id>', methods=['GET'])
 def get_plans(user_id):
     conn = get_db_connection()
@@ -579,69 +865,61 @@ def get_plans(user_id):
 
     return jsonify({'plans': [dict(plan) for plan in plans]})
 
-@app.route('/get-plan/<int:plan_id>')
-def get_weeks(plan_id):
+#get user plan for progress
+@app.route('/get-user-plans/<user_id>', methods=['GET'])
+def get_user_plans(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT DISTINCT week_number FROM WorkoutPlanExercise
-        WHERE plan_id = ?
-        ORDER BY week_number
-    ''', (plan_id,))
-    
-    weeks = cursor.fetchall()
+    cursor.execute('SELECT * FROM WorkoutPlan WHERE user_id = ?', (user_id,))
+    plans = cursor.fetchall()
     conn.close()
 
-    week_names = [f"Week {row['week_number']}" for row in weeks]
-    return jsonify({'weeks': week_names})
+    return jsonify([dict(plan) for plan in plans])
 
-@app.route('/get-plan-weeks/<int:plan_id>', methods=['GET'])
-def get_plan_weeks(plan_id):
+@app.route('/get-plan-dates/<int:plan_id>', methods=['GET'])
+def get_plan_dates(plan_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT DISTINCT week_number
+        SELECT DISTINCT date
         FROM WorkoutPlanExercise
         WHERE plan_id = ?
-        ORDER BY week_number
+        ORDER BY date
     ''', (plan_id,))
     
-    weeks = cursor.fetchall()
+    dates = cursor.fetchall()
     conn.close()
 
-    # Convert to "Week 1", "Week 2", ...
-    week_list = [f"Week {row['week_number']}" for row in weeks]
-    return jsonify({'weeks': week_list})
+    # Convert to readable format (optional: e.g. "2025-06-21 (Saturday)")
+    date_list = [row['date'] for row in dates]
+    return jsonify({'dates': date_list})
 
-@app.route('/get-plan-week/<int:plan_id>/<string:week_name>', methods=['GET'])
-def get_plan_week(plan_id, week_name):
+@app.route('/get-plan-date/<int:plan_id>/<string:date_str>', methods=['GET'])
+def get_plan_date(plan_id, date_str):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Extract week number from "Week 1"
+    # Validate date format
     try:
-        week_number = int(week_name.replace("Week ", ""))
+        datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
-        return jsonify({"error": "Invalid week format"}), 400
+        return jsonify({"error": "Invalid date format. Use %Y-%m-%d"}), 400
 
     cursor.execute('''
-        SELECT w.exercise_id, w.week_number, w.day_number, e.*
+        SELECT w.Workout_id, w.exercise_id, w.date, e.*
         FROM WorkoutPlanExercise w
         JOIN Exercise e ON w.exercise_id = e.Exercise_ID
-        WHERE w.plan_id = ? AND w.week_number = ?
-        ORDER BY w.day_number
-    ''', (plan_id, week_number))
+        WHERE w.plan_id = ? AND w.date = ?
+    ''', (plan_id, date_str))
 
     exercises = cursor.fetchall()
     result = []
     for ex in exercises:
         exercise_dict = dict(ex)
-        # Decode instructions
         exercise_dict['instructions'] = [s.strip() for s in exercise_dict['instructions'].split('.') if s.strip()]
-        
-        # Handle image URLs
+
         folder = exercise_dict['name'].replace('/', '_').replace(' ', '_')
         image_dir = os.path.join(EXERCISE_FOLDER, folder)
         if os.path.exists(image_dir):
@@ -656,6 +934,745 @@ def get_plan_week(plan_id, week_name):
 
     conn.close()
     return jsonify({'exercises': result})
+
+@app.route('/add-exercise', methods=['POST'])
+def add_exercise():
+    data = request.get_json()
+
+    name = data.get('name')
+    level = data.get('level')
+    mechanic = data.get('mechanic')
+    equipment = data.get('equipment')
+    category = data.get('category')
+    instructions = data.get('instructions')
+    
+    # ✅ Decode the muscles list (already a list in JSON)
+    primary_muscles_list = data.get('primaryMuscles', [])
+    if isinstance(primary_muscles_list, list):
+        primary_muscles_str = json.dumps(primary_muscles_list)  # Save as JSON string
+    else:
+        primary_muscles_str = json.dumps([primary_muscles_list])  # Fallback for single muscle
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO Exercise (name, level, mechanic, equipment, primaryMuscles, category, instructions)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (name, level, mechanic, equipment, primary_muscles_str, category, instructions))
+    
+    exercise_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Exercise added successfully', 'id': exercise_id})
+
+#update exercise in plan
+@app.route('/update-exercise-plan', methods=['POST'])
+def update_exercise_plan():
+    data = request.get_json()
+    workout_id = data.get('workout_id')
+    new_exercise_id = data.get('exercise_id') or data.get('new_exercise_id')
+    new_date = data.get('date')  # Optional
+
+    if not workout_id or not new_exercise_id:
+        print("Incoming data:", data)
+        return jsonify({'error': 'Missing workout_id or exercise_id'}), 400
+        
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Build the update query
+    if new_date:
+        cur.execute('''
+            UPDATE WorkoutPlanExercise
+            SET exercise_id = ?, date = ?
+            WHERE Workout_id = ?
+        ''', (new_exercise_id, new_date, workout_id))
+    else:
+        cur.execute('''
+            UPDATE WorkoutPlanExercise
+            SET exercise_id = ?
+            WHERE Workout_id = ?
+        ''', (new_exercise_id, workout_id))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Workout updated successfully'})
+
+#delete exercise in plan
+@app.route('/delete-exercise-plan', methods=['POST'])
+def delete_exercise_plan():
+    data = request.get_json()
+    workout_id = data.get('workout_id')
+
+    if not workout_id:
+        return jsonify({'error': 'Missing workout_id'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute('DELETE FROM WorkoutPlanExercise WHERE Workout_id = ?', (workout_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Workout entry deleted successfully'})
+
+@app.route('/update-exercise/<int:exercise_id>', methods=['PUT'])
+def update_exercise(exercise_id):
+    data = request.json
+    print('RECEIVED primaryMuscles:', data['primaryMuscles'], type(data['primaryMuscles']))
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Convert list to JSON string
+    primary_muscles_json = json.dumps(data['primaryMuscles'])
+
+    cur.execute("""
+        UPDATE Exercise
+        SET name=?, level=?, mechanic=?, equipment=?, primaryMuscles=?, category=?, instructions=?
+        WHERE Exercise_ID=?
+    """, (
+        data['name'],
+        data['level'],
+        data['mechanic'],
+        data['equipment'],
+        primary_muscles_json,  # use JSON string
+        data['category'],
+        data['instructions'],
+        exercise_id
+    ))
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Exercise updated'}), 200
+
+def upload_exercise_images(exercise_id):
+    import os
+    from werkzeug.utils import secure_filename
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM Exercise WHERE Exercise_ID = ?", (exercise_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': 'Exercise not found'}), 404
+
+    exercise_name = row['name']
+    folder_name = exercise_name.replace('/', '_').replace(' ', '_')
+    save_dir = os.path.join(EXERCISE_FOLDER, folder_name)
+    os.makedirs(save_dir, exist_ok=True)
+
+    for i in range(2):
+        file = request.files.get(f'image{i}')
+        if file:
+            ext = file.filename.rsplit('.', 1)[1].lower()
+            if ext not in ['png', 'jpg', 'jpeg']:
+                return jsonify({'error': f'Invalid file type for image{i}'}), 400
+            file_path = os.path.join(save_dir, f"{i}.png")
+            file.save(file_path)
+
+    return jsonify({'message': 'Images uploaded successfully'}), 200
+
+@app.route('/delete-exercise/<int:exercise_id>', methods=['DELETE'])
+def delete_exercise(exercise_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Get exercise name for deleting image folder
+    cur.execute("SELECT name FROM Exercise WHERE Exercise_ID = ?", (exercise_id,))
+    row = cur.fetchone()
+
+    if row is None:
+        conn.close()
+        return jsonify({'error': 'Exercise not found'}), 404
+
+    exercise_name = row['name']
+    folder_name = exercise_name.replace('/', '_').replace(' ', '_')
+    folder_path = os.path.join(EXERCISE_FOLDER, folder_name)
+
+    # Delete from DB
+    cur.execute("DELETE FROM Exercise WHERE Exercise_ID = ?", (exercise_id,))
+    conn.commit()
+    conn.close()
+
+    # Delete image folder if exists
+    if os.path.exists(folder_path):
+        shutil.rmtree(folder_path)
+
+    return jsonify({'message': f'Exercise {exercise_name} deleted successfully'}), 200
+
+#save custom plan
+@app.route('/save-custom-plan', methods=['POST'])
+def save_custom_plan():
+    data = request.get_json()
+
+    user_id = data.get('user_id')
+    exercise_ids = data.get('exercise_ids', [])
+    duration = data.get('duration', 3)  # default to 3 months
+
+    if not user_id or not exercise_ids:
+        return jsonify({"error": "Missing user_id or exercise_ids"}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Insert new workout plan
+        cursor.execute('''
+            INSERT INTO WorkoutPlan (user_id, duration_months, created_at)
+            VALUES (?, ?, ?)
+        ''', (user_id, duration, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+
+        plan_id = cursor.lastrowid
+
+        # Settings for custom distribution
+        exercises_per_day = 3
+        total_days = (len(exercise_ids) + exercises_per_day - 1) // exercises_per_day
+        start_date = datetime.now().date()
+
+        for day_index in range(total_days):
+            target_date = start_date + timedelta(days=day_index)
+            for i in range(exercises_per_day):
+                exercise_index = day_index * exercises_per_day + i
+                if exercise_index >= len(exercise_ids):
+                    break
+                exercise_id = exercise_ids[exercise_index]
+
+                cursor.execute('''
+                    INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
+                    VALUES (?, ?, ?)
+                ''', (plan_id, exercise_id, target_date.strftime('%Y-%m-%d')))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True, "plan_id": plan_id})
+
+    except Exception as e:
+        print("❌ Error:", e)
+        return jsonify({"error": str(e)}), 500
+#delete plan
+@app.route('/delete-plan/<int:plan_id>', methods=['DELETE'])
+def delete_plan(plan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM WorkoutPlanExercise WHERE plan_id = ?', (plan_id,))
+    cursor.execute('DELETE FROM WorkoutPlan WHERE plan_id = ?', (plan_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Plan deleted'}), 200
+   
+#check percentage of progress
+@app.route('/check_workout_progress/<int:plan_id>', methods=['POST'])
+def check_workout_progress(plan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 1. Get WorkoutPlan info (start date and duration)
+    cursor.execute('''
+        SELECT created_at, duration_months
+        FROM WorkoutPlan
+        WHERE plan_id = ?
+    ''', (plan_id,))
+    plan = cursor.fetchone()
+
+    if not plan:
+        conn.close()
+        return jsonify({'error': '❌ WorkoutPlan not found'}), 404
+
+    created_at = plan['created_at']
+    duration_months = plan['duration_months']
+
+    try:
+        start_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        # In case your DB stores it in a shorter format
+        start_date = datetime.strptime(created_at, '%Y-%m-%d')
+
+    end_date = start_date + relativedelta(months=duration_months)
+    total_days = (end_date - start_date).days
+
+    # 2. Count checked daily reminder notifications for that plan
+    cursor.execute('''
+        SELECT COUNT(*) AS completed_days
+        FROM notifications
+        WHERE plan_id = ? AND type = 'daily reminder' AND checked = 1
+    ''', (plan_id,))
+    completed_days = cursor.fetchone()['completed_days']
+
+    # 3. Calculate progress
+    progress = int((completed_days / total_days) * 100) if total_days > 0 else 0
+
+    # 4. Update the WorkoutPlan progress
+    cursor.execute('''
+        UPDATE WorkoutPlan
+        SET progress = ?
+        WHERE plan_id = ?
+    ''', (progress, plan_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'message': f'✅ Progress updated to {progress}%',
+        'progress': progress,
+        'completed_days': completed_days,
+        'total_days': total_days
+    }), 200
+
+#mark exercise for progress analytics
+@app.route('/mark-exercise-status/<user_id>', methods=['POST'])
+def mark_exercise_status(user_id):
+    data = request.get_json()
+    status_to_mark = data.get('status')  # 'completed' or 'overdue'
+    plan_id = data.get('plan_id')
+    exercise_id = data.get('exercise_id')
+    date_str = data.get('date')  # yyyy-mm-dd
+    
+    print("DEBUG mark_exercise_status:")
+    print("user_id:", user_id)
+    print("plan_id:", plan_id)
+    print("exercise_id:", exercise_id)
+    print("date_str:", date_str)
+    print("status:", status_to_mark)
+    if not all([exercise_id, plan_id, date_str, status_to_mark]):
+        return jsonify({'error': 'Missing required fields'}), 400
+    if status_to_mark not in ['completed', 'overdue']:
+        return jsonify({'error': 'Invalid status'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if already exists
+    cursor.execute('''
+        SELECT * FROM ExerciseStatus
+        WHERE user_id = ? AND exercise_id = ? AND plan_id = ? AND date = ?
+    ''', (user_id, exercise_id, plan_id, date_str))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Already marked
+        return jsonify({'message': 'Already recorded for this date'}), 200
+
+    # Insert status
+    cursor.execute('''
+        INSERT INTO ExerciseStatus (user_id, exercise_id, plan_id, date, status)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': f'Exercise marked as {status_to_mark}'}), 200
+
+# --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
+@app.route('/api/users', methods=['GET'])
+def get_all_users():
+    """
+    API endpoint to get all registered users with their profile information.
+    Joins User and Profile tables.
+    Returns:
+        JSON response with a list of user data or an error message.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Join User and Profile tables to get comprehensive user data
+        cursor.execute("""
+            SELECT
+                U.user_id,
+                U.username,
+                U.email,
+                U.role,
+                P.full_name,
+                P.age,
+                P.gender,
+                P.height,
+                P.weight,
+                P.bmi,
+                P.location,
+                P.profile_picture
+            FROM
+                User AS U
+            LEFT JOIN
+                Profile AS P ON U.user_id = P.user_id
+        """)
+        users_data = cursor.fetchall()
+
+        users_list = []
+        for user_row in users_data:
+            user_dict = dict(user_row)
+            # Convert role from integer to string ('Admin' or 'User')
+            user_dict['role'] = 'Admin' if user_dict['role'] == 0 else 'User'
+            users_list.append(user_dict)
+
+        return jsonify(users_list), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_all_users: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_all_users: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# --- NEW ENDPOINT TO GET TOTAL USERS COUNT ---
+@app.route('/api/users/count', methods=['GET'])
+def get_total_users_count():
+    """
+    API endpoint to get the total number of users from the 'User' table.
+    Expects a GET request.
+    Returns:
+        JSON response with 'total_users' count or an error message.
+    """
+    conn = None # Initialize conn to None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Execute the query to count rows in the 'User' table
+        cursor.execute("SELECT COUNT(*) FROM User")
+        total_users = cursor.fetchone()[0] # Fetch the count (first column of the first row)
+
+        # Return the count as a JSON response
+        return jsonify({'total_users': total_users}), 200 # 200 OK
+    except sqlite3.Error as e:
+        # Handle database errors
+        print(f"Database error in get_total_users_count: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500 # 500 Internal Server Error
+    except Exception as e:
+        print(f"An unexpected error occurred in get_total_users_count: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close() # Ensure connection is closed
+
+# --- NEW ENDPOINT TO COUNT PENDING FEEDBACKS ---
+@app.route('/api/feedbacks/pending/count', methods=['GET'])
+def get_pending_feedbacks_count():
+    """
+    API endpoint to get the count of feedbacks with status 'Pending'.
+    Returns:
+        JSON response with 'pending_feedbacks' count or an error message.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Feedback WHERE status = 'Pending'")
+        pending_feedbacks = cursor.fetchone()[0]
+        return jsonify({'pending_feedbacks': pending_feedbacks}), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_pending_feedbacks_count: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_pending_feedbacks_count: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# --- NEW ENDPOINT TO COUNT GENERATED REPORTS ---
+@app.route('/api/reports/count', methods=['GET'])
+def get_reports_count():
+    """
+    API endpoint to get the total count of reports generated.
+    Returns:
+        JSON response with 'reports_generated' count or an error message.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Report")
+        reports_generated = cursor.fetchone()[0]
+        return jsonify({'reports_generated': reports_generated}), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_reports_count: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_reports_count: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/users/<user_id>/role', methods=['PUT'])
+def update_user_role(user_id):
+    """
+    API endpoint to update a user's role.
+    Requires admin_user_id and new_role in the request body.
+    Prevents an admin from changing their own role.
+    """
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id') # In a real app, this comes from a session/JWT
+    new_role = data.get('new_role') # Expected: 0 (Admin), 1 (User), 2 (Banned)
+
+    if not admin_user_id or new_role is None or not isinstance(new_role, int):
+        return jsonify({'error': 'admin_user_id and a valid new_role (0, 1, or 2) are required'}), 400
+
+    if new_role not in [0, 1, 2]:
+        return jsonify({'error': 'Invalid role value. Must be 0 (Admin), 1 (User), or 2 (Banned).'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can change user roles.'}), 403
+
+        # 2. Prevent an admin from changing their own role
+        if user_id == admin_user_id:
+            return jsonify({'error': 'An administrator cannot change their own role.'}), 403
+
+        # 3. Check if the target user_id exists
+        cursor.execute("SELECT user_id FROM User WHERE user_id = ?", (user_id,))
+        target_user_exists = cursor.fetchone()
+        if not target_user_exists:
+            return jsonify({'error': 'User not found.'}), 404
+
+        # 4. Update the user's role
+        cursor.execute("UPDATE User SET role = ? WHERE user_id = ?", (new_role, user_id))
+        conn.commit()
+
+        return jsonify({'message': f'User {user_id} role updated to {new_role}'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in update_user_role: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in update_user_role: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/users/<user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    """
+    API endpoint to delete a user and all associated data.
+    Requires admin_user_id in the request body to authorize the action.
+    Prevents an admin from deleting another admin or themselves.
+    """
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id')
+
+    if not admin_user_id:
+        return jsonify({'error': 'admin_user_id is required for this operation.'}), 401 # Unauthorized
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can delete users.'}), 403
+
+        # 2. Prevent an admin from deleting themselves
+        if user_id == admin_user_id:
+            return jsonify({'error': 'An administrator cannot delete their own account.'}), 403
+
+        # 3. Check the role of the user to be deleted
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (user_id,))
+        user_to_delete_row = cursor.fetchone()
+        if not user_to_delete_row:
+            return jsonify({'error': 'User not found.'}), 404
+        
+        if user_to_delete_row['role'] == 0: # If the user to be deleted is an Admin
+            return jsonify({'error': 'Cannot delete another administrator account.'}), 403
+
+        # Start a transaction for atomicity
+        conn.execute("BEGIN TRANSACTION;")
+
+        # Tables with user_id as foreign key, ordered for dependency
+        tables_to_delete_from = [
+            "ChatbotInteraction", "Feedback", "FeedbackResponse", "Goal",
+            "MealScan", "Notification", "ProgressLog", "Report", "SystemLog", 
+            "UserDietPlan", "UserDietPreference", "WorkoutPlan", "VoiceLog", "Profile",
+            # RecipeLibrary does not seem to have a direct user_id FK, assuming it's managed differently
+            # Reminder might be associated, if so add it here
+        ]
+
+        for table in tables_to_delete_from:
+            try:
+                # Check if the table actually has a user_id column before attempting to delete
+                cursor.execute(f"PRAGMA table_info({table});")
+                columns = [col[1] for col in cursor.fetchall()]
+                if 'user_id' in columns:
+                    cursor.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+                    print(f"Deleted {cursor.rowcount} records from {table} for user {user_id}")
+                else:
+                    print(f"Table {table} does not have a user_id column. Skipping.")
+            except sqlite3.OperationalError as e:
+                print(f"Warning: Could not delete from {table}. Table might not exist or column missing: {e}")
+                # You might want to raise an error here if you expect all these tables to exist
+
+        # Finally, delete from the User table
+        cursor.execute("DELETE FROM User WHERE user_id = ?", (user_id,))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'User not found or already deleted.'}), 404
+
+        conn.commit()
+        return jsonify({'message': f'User {user_id} and all associated data deleted successfully.'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in delete_user: {e}")
+        if conn:
+            conn.rollback() # Rollback on error
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in delete_user: {e}")
+        if conn:
+            conn.rollback() # Rollback on unexpected error
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/systemlogs', methods=['GET'])
+def get_system_logs():
+    """
+    API endpoint to retrieve all entries from the SystemLog table.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Fetch all logs, ordered by timestamp descending for most recent first
+        cursor.execute("SELECT log_id, user_id, action, timestamp FROM SystemLog ORDER BY timestamp DESC")
+        logs = cursor.fetchall()
+
+        log_list = []
+        for log in logs:
+            log_list.append({
+                'log_entry_id': log['log_id'],
+                'user_id': log['user_id'],
+                'action': log['action'],
+                'timestamp': log['timestamp']
+            })
+        return jsonify(log_list), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_system_logs: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_system_logs: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# NEW: API endpoint to get all feedback
+@app.route('/api/feedback', methods=['GET'])
+def get_all_feedback():
+    """
+    API endpoint to retrieve all feedback entries from the Feedback table.
+    Can accept 'status' and 'category' query parameters for filtering.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        status_filter = request.args.get('status')
+        category_filter = request.args.get('category')
+
+        query = "SELECT feedback_id, user_id, submitted_at, category, feedback_text, status FROM Feedback WHERE 1=1"
+        params = []
+
+        if status_filter:
+            query += " AND status = ?"
+            params.append(status_filter)
+        if category_filter:
+            query += " AND category = ?"
+            params.append(category_filter)
+
+        query += " ORDER BY submitted_at DESC, feedback_id DESC" # Order by most recent first
+
+        cursor.execute(query, params)
+        feedbacks = cursor.fetchall()
+
+        feedback_list = []
+        for fb in feedbacks:
+            feedback_list.append({
+                'feedback_id': fb['feedback_id'],
+                'user_id': fb['user_id'],
+                'submitted_at': fb['submitted_at'],
+                'category': fb['category'],
+                'feedback_text': fb['feedback_text'],
+                'status': fb['status']
+            })
+        return jsonify(feedback_list), 200
+    except sqlite3.Error as e:
+        print(f"Database error in get_all_feedback: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_all_feedback: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# NEW: API endpoint to submit feedback
+@app.route('/api/feedback', methods=['POST'])
+def submit_feedback():
+    """
+    API endpoint to submit new feedback to the Feedback table.
+    """
+    data = request.get_json()
+    user_id = data.get('user_id')
+    category = data.get('category')
+    feedback_text = data.get('feedback_text')
+
+    if not all([user_id, category, feedback_text]):
+        return jsonify({'error': 'Missing required fields: user_id, category, feedback_text'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        feedback_id = generate_feedback_id()
+        submitted_at = datetime.now().strftime('%Y-%m-%d')
+        status = "Pending"
+
+        cursor.execute('''
+            INSERT INTO Feedback (feedback_id, user_id, submitted_at, category, feedback_text, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (feedback_id, user_id, submitted_at, category, feedback_text, status))
+        conn.commit()
+
+        return jsonify({
+            'message': 'Feedback submitted successfully',
+            'feedback_id': feedback_id,
+            'submitted_at': submitted_at,
+            'status': status
+        }), 201 # 201 Created
+    except sqlite3.Error as e:
+        print(f"Database error in submit_feedback: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in submit_feedback: {e}")
+        conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/suggest-meals', methods=['POST'])
 def suggest_meals():
@@ -703,7 +1720,6 @@ def suggest_meals():
     suggested_meals.sort(key=lambda x: x['match_percentage'], reverse=True)
     conn.close()
     return jsonify({'meals': suggested_meals})
-
 
 @app.route('/meal-scan', methods=['POST'])
 def meal_scan():
@@ -1073,6 +2089,727 @@ Now, please respond to the user's question about fitness, nutrition, or wellness
     except Exception as e:
         print(f"Error in /api/chatbot: {e}")
         return jsonify({'reply': 'Sorry, something went wrong. Please try asking about your fitness or nutrition goals!', 'success': False}), 500
+
+@app.route('/api/analytics/user_engagement', methods=['GET'])
+def get_user_engagement_analytics():
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Define time ranges for analysis
+        now = datetime.now()
+        thirty_minutes_ago = now - timedelta(minutes=30)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        seven_days_ago = now - timedelta(days=7)
+
+        # 1. Total Logins/Logouts (All time)
+        cursor.execute("SELECT action, COUNT(*) as count FROM SystemLog GROUP BY action")
+        overall_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        total_logins = overall_activity.get('Logged In', 0)
+        total_logouts = overall_activity.get('Logged Out', 0)
+
+        # 2. Logins/Logouts in last 30 minutes
+        cursor.execute(
+            "SELECT action, COUNT(*) as count FROM SystemLog WHERE timestamp >= ? GROUP BY action",
+            (thirty_minutes_ago.strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        last_30_min_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        logins_last_30_minutes = last_30_min_activity.get('Logged In', 0)
+        logouts_last_30_minutes = last_30_min_activity.get('Logged Out', 0)
+
+        # 3. Logins/Logouts in last 24 hours
+        cursor.execute(
+            "SELECT action, COUNT(*) as count FROM SystemLog WHERE timestamp >= ? GROUP BY action",
+            (twenty_four_hours_ago.strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        last_24_hours_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        logins_last_24_hours = last_24_hours_activity.get('Logged In', 0)
+        logouts_last_24_hours = last_24_hours_activity.get('Logged Out', 0)
+
+        # 4. Logins/Logouts in last 7 days
+        cursor.execute(
+            "SELECT action, COUNT(*) as count FROM SystemLog WHERE timestamp >= ? GROUP BY action",
+            (seven_days_ago.strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        last_7_days_activity = {row['action']: row['count'] for row in cursor.fetchall()}
+        logins_last_7_days = last_7_days_activity.get('Logged In', 0)
+        logouts_last_7_days = last_7_days_activity.get('Logged Out', 0)
+
+
+        # 5. Unique Users Logged In (last 24 hours, last 7 days, overall)
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM SystemLog WHERE action = 'Logged In' AND timestamp >= ?",
+                       (twenty_four_hours_ago.strftime("%Y-%m-%d %H:%M:%S"),))
+        unique_users_24h = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM SystemLog WHERE action = 'Logged In' AND timestamp >= ?",
+                       (seven_days_ago.strftime("%Y-%m-%d %H:%M:%S"),))
+        unique_users_7d = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM SystemLog WHERE action = 'Logged In'")
+        unique_users_overall = cursor.fetchone()[0]
+
+        # 6. Top N Users by Login Count (e.g., top 5 overall)
+        cursor.execute("""
+            SELECT user_id, COUNT(*) as login_count
+            FROM SystemLog
+            WHERE action = 'Logged In'
+            GROUP BY user_id
+            ORDER BY login_count DESC
+            LIMIT 5
+        """)
+        top_users_by_logins = [dict(row) for row in cursor.fetchall()]
+
+        # 7. Hourly Login/Logout Trends for the last 24 hours
+        hourly_trends = []
+        for i in range(24):
+            # Calculate the start and end of each hour window, relative to 'now'
+            # For 00:00, it's 24 hours ago, for 01:00 it's 23 hours ago, etc.
+            # So, hour_start is 23-i hours ago, and hour_end is 22-i hours ago.
+            hour_start = now - timedelta(hours=(23 - i))
+            hour_end = now - timedelta(hours=(22 - i))
+            
+            cursor.execute(
+                """SELECT action, COUNT(*) as count FROM SystemLog
+                   WHERE timestamp >= ? AND timestamp < ?
+                   GROUP BY action""",
+                (hour_start.strftime("%Y-%m-%d %H:%M:%S"), hour_end.strftime("%Y-%m-%d %H:%M:%S"))
+            )
+            hourly_data = {row['action']: row['count'] for row in cursor.fetchall()}
+            
+            hourly_trends.append({
+                'hour': hour_start.strftime("%H:00"),
+                'logins': hourly_data.get('Logged In', 0),
+                'logouts': hourly_data.get('Logged Out', 0)
+            })
+
+        # 8. Daily Login/Logout Trends for the last 7 days
+        daily_trends = []
+        for i in range(7):
+            day = now - timedelta(days=(6 - i))
+            day_start = datetime(day.year, day.month, day.day, 0, 0, 0)
+            day_end = datetime(day.year, day.month, day.day, 23, 59, 59)
+
+            cursor.execute(
+                """SELECT action, COUNT(*) as count FROM SystemLog
+                   WHERE timestamp >= ? AND timestamp <= ?
+                   GROUP BY action""",
+                (day_start.strftime("%Y-%m-%d %H:%M:%S"), day_end.strftime("%Y-%m-%d %H:%M:%S"))
+            )
+            daily_data = {row['action']: row['count'] for row in cursor.fetchall()}
+
+            daily_trends.append({
+                'date': day.strftime("%Y-%m-%d"),
+                'logins': daily_data.get('Logged In', 0),
+                'logouts': daily_data.get('Logged Out', 0)
+            })
+            
+        return jsonify({
+            'overall_logins': total_logins,
+            'overall_logouts': total_logouts,
+            'logins_last_30_minutes': logins_last_30_minutes,
+            'logouts_last_30_minutes': logouts_last_30_minutes,
+            'logins_last_24_hours': logins_last_24_hours,
+            'logouts_last_24_hours': logouts_last_24_hours,
+            'logins_last_7_days': logins_last_7_days,
+            'logouts_last_7_days': logouts_last_7_days,
+            'unique_users_24h': unique_users_24h,
+            'unique_users_7d': unique_users_7d,
+            'unique_users_overall': unique_users_overall,
+            'top_users_by_logins': top_users_by_logins,
+            'hourly_trends': hourly_trends,
+            'daily_trends': daily_trends,
+            'success': True
+        }), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_user_engagement_analytics: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e), 'success': False}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_user_engagement_analytics: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e), 'success': False}), 500
+    finally:
+        if conn:
+            conn.close()
+
+#exercise_analytics
+@app.route('/workout-analytics/global', methods=['GET'])
+def global_workout_analytics():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Count total users
+    cur.execute("SELECT COUNT(*) AS total_users FROM User WHERE role = 0")
+    total_users = cur.fetchone()['total_users']
+
+    # Count total workout plans
+    cur.execute("SELECT COUNT(*) AS total_plans FROM WorkoutPlan")
+    total_plans = cur.fetchone()['total_plans']
+
+    # Count completed and overdue exercises
+    cur.execute("SELECT status, COUNT(*) AS count FROM ExerciseStatus GROUP BY status")
+    status_counts = {row['status']: row['count'] for row in cur.fetchall()}
+    completed = status_counts.get('completed', 0)
+    overdue = status_counts.get('overdue', 0)
+
+    # Average progress across all users
+    cur.execute("SELECT plan_id, user_id FROM WorkoutPlan")
+    plans = cur.fetchall()
+    total_progress = 0
+    counted = 0
+
+    for plan in plans:
+        plan_id = plan['plan_id']
+        user_id = plan['user_id']
+
+        cur.execute("SELECT COUNT(*) AS total FROM WorkoutPlanExercise WHERE plan_id = ?", (plan_id,))
+        total_ex = cur.fetchone()['total']
+
+        cur.execute("SELECT COUNT(*) AS done FROM ExerciseStatus WHERE user_id = ? AND plan_id = ? AND status = 'completed'", (user_id, plan_id))
+        done_ex = cur.fetchone()['done']
+
+        if total_ex > 0:
+            progress = (done_ex / total_ex) * 100
+            total_progress += progress
+            counted += 1
+
+    avg_progress = round(total_progress / counted, 1) if counted > 0 else 0
+
+    # Most chosen exercise
+    cur.execute("SELECT Exercise_ID FROM WorkoutPlanExercise")
+    all_ex_ids = [row['Exercise_ID'] for row in cur.fetchall()]
+    most_common = Counter(all_ex_ids).most_common(1)
+
+    most_chosen_exercise = None
+    if most_common:
+        top_ex_id, _ = most_common[0]
+        cur.execute("SELECT name FROM Exercise WHERE Exercise_ID = ?", (top_ex_id,))
+        name_row = cur.fetchone()
+        most_chosen_exercise = name_row['name'] if name_row else None
+
+    conn.close()
+
+    return jsonify({
+        'total_users': total_users,
+        'total_plans': total_plans,
+        'completed_exercises': completed,
+        'overdue_exercises': overdue,
+        'average_progress_percent': avg_progress,
+        'most_chosen_exercise': most_chosen_exercise
+    })
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    """
+    API endpoint for logging user logout activity.
+    Expects user_id in the request body.
+    """
+    data = request.get_json()
+    user_id = data.get('user_id')
+    formatted_user_id = f"U{user_id:03d}"
+
+    if not user_id:
+        return jsonify({'error': 'User ID is required for logout logging'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+
+        # Log successful logout
+        log_id = generate_log_id()
+        action = "Logged Out"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        c.execute("INSERT INTO SystemLog (log_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)",
+                  (log_id, formatted_user_id, action, timestamp))
+        conn.commit()
+
+        return jsonify({'message': 'Logout activity logged successfully', 'success': True}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error logging logout activity: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error during logout logging', 'success': False}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred during logout logging: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Internal server error during logout logging', 'success': False}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/system/disable', methods=['POST'])
+def disable_system():
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id')
+    formatted_admin_user_id = f"U{admin_user_id:03d}"
+
+    if not admin_user_id:
+        return jsonify({'error': 'Admin user ID is required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (formatted_admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can disable the system.'}), 403
+
+        # Update all users with role 1 to role 3
+        cursor.execute("UPDATE User SET role = 3 WHERE role = 1")
+        conn.commit()
+        return jsonify({'message': 'System disabled: All regular users temporarily set to role 3.'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in disable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in disable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/system/enable', methods=['POST'])
+def enable_system():
+    data = request.get_json()
+    admin_user_id = data.get('admin_user_id')
+    formatted_admin_user_id = f"U{admin_user_id:03d}"
+
+    if not admin_user_id:
+        return jsonify({'error': 'Admin user ID is required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify the 'admin_user_id' making the request is actually an admin
+        cursor.execute("SELECT role FROM User WHERE user_id = ?", (formatted_admin_user_id,))
+        requester_role_row = cursor.fetchone()
+        if not requester_role_row or requester_role_row['role'] != 0: # 0 for Admin
+            return jsonify({'error': 'Unauthorized: Only administrators can enable the system.'}), 403
+
+        # Update all users with role 3 back to role 1
+        cursor.execute("UPDATE User SET role = 1 WHERE role = 3")
+        conn.commit()
+        return jsonify({'message': 'System enabled: All temporarily disabled users set back to role 1.'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in enable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in enable_system: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/notifications/<user_id>', methods=['GET'])
+def get_notifications(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT notification_id, user_id, plan_id, type, checked, details, exercise_id, date 
+        FROM notifications 
+        WHERE user_id = ? 
+        ORDER BY date DESC
+    """, (user_id,))
+    rows = cursor.fetchall()
+    print(f"Fetched notifications for user {user_id}: {rows}")
+    conn.close()
+
+    notifications = [{
+        "notification_id": row[0],
+        "user_id": row[1],
+        "plan_id": row[2],
+        "type": row[3],
+        "checked": row[4],
+        "details": row[5],
+        "exercise_id": row[6],  # ✅ now included
+        "date": row[7]
+    } for row in rows]
+
+    return jsonify(notifications)
+
+@app.route('/notifications/check/<int:notification_id>', methods=['POST'])
+def mark_notification_checked(notification_id):
+    conn = get_db_connection()
+    conn.execute("""
+        UPDATE notifications
+        SET checked = 1
+        WHERE notification_id  = ?
+    """, (notification_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Notification marked as checked'})
+
+#check the daily reminders and overdue exercise
+@app.route('/reminders/check/<user_id>', methods=['POST'])
+def check_reminders_route(user_id):
+    check_reminders(user_id)
+    return jsonify({'status': 'checked'})
+
+def check_reminders(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    cursor.execute('SELECT plan_id, created_at, duration_months FROM WorkoutPlan WHERE user_id = ?', (user_id,))
+    plans = cursor.fetchall()
+
+    for plan in plans:
+        plan_id = plan['plan_id']
+        duration = int(plan['duration_months'])
+        start_date = datetime.strptime(plan['created_at'].split()[0], '%Y-%m-%d')  # fixes timestamp issue
+
+        end_date = start_date + timedelta(weeks=duration*4)
+
+        current_date = start_date
+        while current_date <= datetime.today():
+            formatted_date = current_date.strftime('%Y-%m-%d')
+
+            cursor.execute('''
+                SELECT Exercise_ID FROM WorkoutPlanExercise
+                WHERE plan_id = ? AND date = ?
+            ''', (plan_id, formatted_date))
+            exercises = cursor.fetchall()
+
+            for ex in exercises:
+                exercise_id = ex['Exercise_ID']
+
+                cursor.execute('''
+                    SELECT 1 FROM ExerciseStatus
+                    WHERE user_id = ? AND plan_id = ? AND Exercise_ID = ? AND date = ?
+                ''', (user_id, plan_id, exercise_id, formatted_date))
+                exists = cursor.fetchone()
+
+                if not exists and formatted_date < today:
+                    cursor.execute('''
+                        INSERT INTO ExerciseStatus (user_id, Exercise_ID, plan_id, date, status)
+                        VALUES (?, ?, ?, ?, 'overdue')
+                    ''', (user_id, exercise_id, plan_id, formatted_date))
+
+            current_date += timedelta(days=1)
+
+    conn.commit()
+    conn.close()
+
+#daily reminder helper for exercise
+def insert_daily_reminder_if_due(user_id, plan_id):
+    conn = get_db_connection()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # Check if a reminder for today already exists
+    check = conn.execute("""
+        SELECT 1 FROM notifications
+        WHERE user_id = ? AND plan_id = ? AND DATE(created_at) = ? AND type = 'daily reminder'
+    """, (user_id, plan_id, today)).fetchone()
+
+    if not check:
+        conn.execute("""
+            INSERT INTO notifications (user_id, plan_id, type, date, checked)
+            VALUES (?, ?, 'daily reminder', datetime('now'), 0)
+        """, (user_id, plan_id))
+        conn.commit()
+
+    conn.close()
+
+#admin send notifications
+@app.route('/admin/send-notification', methods=['POST'])
+def send_admin_notification():
+    data = request.get_json()
+    notif_type = data.get('type')
+    details = data.get('details')
+
+    if notif_type not in ['system update', 'system maintenance'] or not details:
+        return jsonify({"error": "Invalid input"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get all users with role = 1 (normal users)
+    users = cursor.execute("SELECT user_id FROM User WHERE role = 1").fetchall()
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    for user in users:
+        cursor.execute("""
+            INSERT INTO notifications (user_id, plan_id, type, details, date, checked)
+            VALUES (?, NULL, ?, ?, ?, 0)
+        """, (user['user_id'], notif_type, details, now))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": f"Notification sent to {len(users)} users."})
+
+@app.route('/admin/feedbacks', methods=['GET'])
+def get_all_feedbacks():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Feedback WHERE status IS NULL OR status != 'Responded'")
+    rows = cursor.fetchall()
+    conn.close()
+
+    feedbacks = [{
+        "feedback_id": row["feedback_id"],
+        "user_id": row["user_id"],
+        "submitted_at": row["submitted_at"],
+        "category": row["category"],
+        "feedback_text": row["feedback_text"]
+    } for row in rows]
+    return jsonify(feedbacks)
+
+@app.route('/admin/respond-feedback', methods=['POST'])
+def respond_to_feedback():
+    data = request.get_json()
+    feedback_id = data.get('feedback_id')
+    user_id = data.get('user_id')
+    response_text = data.get('response_text')
+
+    if not all([feedback_id, user_id, response_text]):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # ✅ 1. Insert or Replace into FeedbackResponse
+    cursor.execute("""
+        INSERT OR REPLACE INTO FeedbackResponse 
+        (feedback_id, user_id, response_text, response_date)
+        VALUES (?, ?, ?, datetime('now'))
+    """, (feedback_id, user_id, response_text))
+
+    # ✅ 2. Update status of Feedback
+    cursor.execute("""
+        UPDATE Feedback
+        SET status = 'Responded'
+        WHERE feedback_id = ?
+    """, (feedback_id,))
+
+    # ✅ 3. Insert into Notifications table
+    notification_details = f"Admin responded to your feedback (ID: {feedback_id}): {response_text}"
+    cursor.execute("""
+        INSERT INTO notifications (user_id, plan_id, type, details, checked, date)
+        VALUES (?, NULL, ?, ?, 0, datetime('now'))
+    """, (user_id, "Feedback Response", notification_details))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Feedback response and notification added.'}), 201
+
+@app.route('/api/profile/<user_id>', methods=['PUT'])
+def update_profile(user_id):
+    data = request.get_json()
+    
+    # Extract data with default None
+    full_name = data.get('username') # The frontend sends username as 'username'
+    age = data.get('age')
+    height = data.get('height')
+    weight = data.get('weight')
+    location = data.get('location')
+    allergies = data.get('allergies')
+    dietary_goal = data.get('dietary_goal')
+    profile_picture_base64 = data.get('profile_picture')
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # Update Profile table
+        bmi = None
+        if height is not None and weight is not None:
+            try:
+                height_m = float(height) / 100 # Convert cm to meters
+                bmi = round(float(weight) / (height_m ** 2), 2)
+            except (ValueError, TypeError, ZeroDivisionError):
+                bmi = None
+
+        cur.execute("SELECT * FROM Profile WHERE user_id = ?", (user_id,))
+        existing_profile = cur.fetchone()
+
+        if existing_profile:
+            # Construct UPDATE query for Profile table dynamically
+            profile_update_fields = []
+            profile_update_values = []
+            
+            if full_name is not None:
+                profile_update_fields.append("full_name = ?")
+                profile_update_values.append(full_name)
+            if age is not None:
+                profile_update_fields.append("age = ?")
+                profile_update_values.append(int(age))
+            if height is not None:
+                profile_update_fields.append("height = ?")
+                profile_update_values.append(float(height))
+            if weight is not None:
+                profile_update_fields.append("weight = ?")
+                profile_update_values.append(float(weight))
+            if bmi is not None:
+                profile_update_fields.append("bmi = ?")
+                profile_update_values.append(bmi)
+            if location is not None:
+                profile_update_fields.append("location = ?")
+                profile_update_values.append(location)
+            if profile_picture_base64 is not None:
+                profile_update_fields.append("profile_picture = ?")
+                profile_update_values.append(profile_picture_base64)
+            
+            if profile_update_fields:
+                profile_update_query = f"UPDATE Profile SET {', '.join(profile_update_fields)} WHERE user_id = ?"
+                profile_update_values.append(user_id)
+                cur.execute(profile_update_query, tuple(profile_update_values))
+        else:
+            # If profile does not exist, insert it (should not happen for existing users)
+            profile_id = generate_profile_id()
+            cur.execute("""
+                INSERT INTO Profile (profile_id, user_id, full_name, age, height, weight, bmi, location, profile_picture)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (profile_id, user_id, full_name, int(age), float(height), float(weight), bmi, location, profile_picture_base64))
+
+        # Update UserDietPreference table
+        cur.execute("SELECT * FROM UserDietPreference WHERE user_id = ?", (user_id,))
+        existing_diet_pref = cur.fetchone()
+
+        if existing_diet_pref:
+            diet_pref_update_fields = []
+            diet_pref_update_values = []
+
+            if dietary_goal is not None:
+                diet_pref_update_fields.append("dietary_goal = ?")
+                diet_pref_update_values.append(dietary_goal)
+            if allergies is not None:
+                diet_pref_update_fields.append("allergies = ?")
+                diet_pref_update_values.append(allergies)
+            
+            if diet_pref_update_fields:
+                diet_pref_update_query = f"UPDATE UserDietPreference SET {', '.join(diet_pref_update_fields)} WHERE user_id = ?"
+                diet_pref_update_values.append(user_id)
+                cur.execute(diet_pref_update_query, tuple(diet_pref_update_values))
+        else:
+            # If diet preference does not exist, insert it
+            diet_pref_id = generate_diet_pref_id()
+            cur.execute("""
+                INSERT INTO UserDietPreference (diet_pref_id, user_id, dietary_goal, allergies)
+                VALUES (?, ?, ?, ?)
+            """, (diet_pref_id, user_id, dietary_goal, allergies))
+
+        # Update Goal table (specifically current_value and goal_type)
+        cur.execute("SELECT * FROM Goal WHERE user_id = ?", (user_id,))
+        existing_goal = cur.fetchone()
+
+        if existing_goal:
+            goal_update_fields = []
+            goal_update_values = []
+            
+            if weight is not None: # User edited weight, update current_value in Goal
+                goal_update_fields.append("current_value = ?")
+                goal_update_values.append(float(weight))
+            if dietary_goal is not None: # User edited goals, update goal_type in Goal
+                goal_update_fields.append("goal_type = ?")
+                goal_update_values.append(dietary_goal)
+
+            if goal_update_fields:
+                goal_update_query = f"UPDATE Goal SET {', '.join(goal_update_fields)} WHERE user_id = ?"
+                goal_update_values.append(user_id)
+                cur.execute(goal_update_query, tuple(goal_update_values))
+        else:
+            # If goal does not exist, insert it (assuming a default status/target if needed)
+            goal_id = generate_goal_id()
+            cur.execute("""
+                INSERT INTO Goal (goal_id, user_id, goal_type, current_value, status)
+                VALUES (?, ?, ?, ?, ?)
+            """, (goal_id, user_id, dietary_goal, float(weight) if weight else None, 'In Progress'))
+
+
+        conn.commit()
+        return jsonify({'message': 'Profile updated successfully'}), 200
+
+    except sqlite3.Error as e:
+        conn.rollback()
+        print(f"Database error during profile update: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        conn.rollback()
+        print(f"An unexpected error occurred during profile update: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/profile/<user_id>', methods=['GET'])
+def get_user_profile(user_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Fetch profile data
+        cursor.execute("""
+            SELECT 
+                p.full_name, p.age, p.gender, p.height, p.weight, p.bmi, p.location, p.profile_picture,
+                ud.dietary_goal, ud.allergies,
+                u.username
+            FROM Profile p
+            LEFT JOIN UserDietPreference ud ON p.user_id = ud.user_id
+            LEFT JOIN User u ON p.user_id = u.user_id
+            WHERE p.user_id = ?
+        """, (user_id,))
+        profile_data = cursor.fetchone()
+
+        if not profile_data:
+            return jsonify({'error': 'Profile not found'}), 404
+
+        # Fetch goals data
+        cursor.execute("SELECT goal_type, target_value, current_value, status FROM Goal WHERE user_id = ?", (user_id,))
+        goal_data = cursor.fetchone() # Assuming one primary goal for simplicity
+
+        response_data = {
+            'user_id': user_id,
+            'username': profile_data['username'],
+            'full_name': profile_data['full_name'],
+            'age': profile_data['age'],
+            'gender': profile_data['gender'],
+            'height': profile_data['height'],
+            'weight': profile_data['weight'],
+            'bmi': profile_data['bmi'],
+            'location': profile_data['location'],
+            'profile_picture': profile_data['profile_picture'],
+            'allergies': profile_data['allergies'],
+            'dietary_goal': profile_data['dietary_goal'],
+            'goal_type': goal_data['goal_type'] if goal_data else None,
+            'target_value': goal_data['target_value'] if goal_data else None,
+            'current_value': goal_data['current_value'] if goal_data else None,
+            'goal_status': goal_data['status'] if goal_data else None
+        }
+
+        return jsonify(response_data), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_user_profile: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+    except Exception as e:
+        print(f"An unexpected error occurred in get_user_profile: {e}")
+        return jsonify({'error': 'Server error', 'message': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('./backend/temp', exist_ok=True)
@@ -1100,4 +2837,4 @@ if __name__ == '__main__':
     print("\n--- Registered Routes ---")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.rule} [{rule.methods}]")
-    app.run(debug=True)
+app.run(host='0.0.0.0', port=5000, debug=True)

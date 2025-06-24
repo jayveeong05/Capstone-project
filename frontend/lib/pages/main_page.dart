@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'fitness_page.dart';
@@ -7,6 +8,12 @@ import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
 import 'diet_plan_page.dart'; 
 import 'MealLoggingPage.dart';
+import 'package:http/http.dart'as http;
+import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -18,11 +25,34 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   String _username = 'User'; // Default username
   int _currentIndex = 0; // For BottomNavigationBar selection
+  String _currentMotivationalMessage = '';
+
+  // List of motivational messages
+  final List<String> _motivationalMessages = [
+    "You don’t have to be great to start — but you do have to put down the donut. 🍩💪",
+    "Sore today, strong tomorrow. And yes, you can still walk like a crab in public. 🦀",
+    "Running late counts as cardio, but let’s aim higher. 🏃‍♂️🔥",
+    "Your sweat is just your fat crying. Let it all out! 😭💦",
+    "Warning: Side effects of working out include confidence, endorphins, and tight pants. 😎🩳",
+    "Crush today. The couch will still be there tomorrow. 🛋️✨",
+    "You didn’t come this far to only come this far. Keep going, beast! 🐺🔥",
+    "Be the reason someone checks themselves in the mirror twice. 👀💪",
+    "One more rep. One more win. You’ve got this! 🏆🎯",
+    "You vs. You. Spoiler: You're winning. 🥇🔁",
+    "Don’t quit now — pizza tastes better after a workout. 🍕❤️‍🔥",
+    "Work out like your ex is watching. 👀💃",
+    "Lift heavy. Laugh harder. Repeat. 😂🏋️‍♀️",
+    "We’re not here to take it easy. We’re here to take it legendary. 🌟🔥",
+    "Muscles loading… please wait. (And hydrate.) 💧⏳",
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadUsername(); // Load existing profile data when the page initializes
+    _loadUsername();
+    _fetchUserPlansWithProgress();
+    _triggerDailyReminder();
+    _setRandomMotivationalMessage();
   }
   // Function to load the username from SharedPreferences
   Future<void> _loadUsername() async {
@@ -32,13 +62,119 @@ class _MainPageState extends State<MainPage> {
     });
   }
 
-  // Function to handle logout
-  Future<void> _logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Clears all data in SharedPreferences (including 'isLoggedIn' and 'username')
-    // Ensure you have a login route defined in your MaterialApp
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+void _launchYouTube(String url) async {
+    final Uri url = Uri(
+            scheme: 'https', host: 'www.youtube.com', path: '');  
+            if (!await launchUrl(url,
+                mode: LaunchMode.externalApplication)) {
+                throw 'Could not launch $url';
+       }
   }
+
+  
+  // Function to set a random motivational message
+  void _setRandomMotivationalMessage() {
+    final _random = Random();
+    setState(() {
+      _currentMotivationalMessage = _motivationalMessages[_random.nextInt(_motivationalMessages.length)];
+    });
+  }
+Future<void> _triggerDailyReminder() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getInt('user_id');
+  if (userId == null) return;
+
+  final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+
+  final response = await http.post(Uri.parse('http://10.0.2.2:5000/reminders/check/$formattedUserId'),
+  );
+
+  if (response.statusCode == 200) {
+    print("✅ Daily reminder checked for user $formattedUserId");
+  } else {
+    print("❌ Failed to check reminders: ${response.body}");
+  }
+}
+
+Future<void> writeLog(String username, String action) async {
+  try {
+    final directory = await getApplicationDocumentsDirectory();
+    final filePath = '${directory.path}/activity_log.txt';
+    final file = File(filePath);
+
+    final now = DateTime.now();
+    final formattedTime = DateFormat('HH:mm:ss dd/MM/yyyy').format(now);
+    final logLine = '-- $username has been $action at $formattedTime\n';
+
+    await file.writeAsString(logLine, mode: FileMode.append); // Append to the file
+    print('✅ Log written: $logLine');
+    print('Log file stored at: ${file.path}');
+  } catch (e) {
+    print('❌ Failed to write log: $e');
+  }
+}
+
+Future<void> _logout() async {
+  final confirm = await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text("Logout"),
+      content: Text("Are you sure you want to logout?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text("Logout", style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm == true) {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('username') ?? 'User';
+    final userId = prefs.getInt('user_id');
+    await writeLog(username, 'logged out');
+    if (userId != null) {
+      try {
+        final uri = Uri.parse('http://10.0.2.2:5000/logout'); // Use the correct logout endpoint
+        final response = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'user_id': userId}),
+        );
+
+        if (response.statusCode == 200) {
+          print('✅ Backend: Logout activity logged successfully for user $userId');
+        } else {
+          print('❌ Backend: Failed to log logout activity. Status: ${response.statusCode}, Body: ${response.body}');
+        }
+      } catch (e) {
+        print('❌ Backend: Error sending logout request: $e');
+      }
+    } else {
+      print('❌ No user ID found in SharedPreferences for backend logout logging.');
+    }    
+    
+    // Show SnackBar before navigating away
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("✅ Logged out successfully"),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    // Delay a bit so SnackBar is visible
+    await Future.delayed(Duration(seconds: 1));
+
+    // Navigate to main.dart or login screen
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+}
 
   // Helper widget to build a standardized section card
   Widget _buildSectionCard({required Widget child, Color? color, double elevation = 4}) {
@@ -50,27 +186,6 @@ class _MainPageState extends State<MainPage> {
       child: Padding(
         padding: const EdgeInsets.all(20.0),
         child: child,
-      ),
-    );
-  }
-
-  // Helper widget to build a quick stat item
-  Widget _buildStatItem(IconData icon, String label, String value, Color color) {
-    return Expanded( // Use Expanded for even distribution
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: Colors.blueGrey),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-                fontSize: 15, fontWeight: FontWeight.bold, color: color),
-          ),
-        ],
       ),
     );
   }
@@ -185,6 +300,171 @@ class _MainPageState extends State<MainPage> {
     );
   }
 
+void _showNotifications(BuildContext context) async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getInt('user_id');
+  if (userId == null) return;
+  final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+  final response = await http.get(
+    Uri.parse('http://10.0.2.2:5000/notifications/$formattedUserId'),
+  );
+
+  if (response.statusCode != 200) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('❌ Failed to fetch notifications.')),
+    );
+    return;
+  }
+
+  final List<dynamic> notifications = json.decode(response.body);
+
+  // Filter to show only unchecked notifications
+  final List<dynamic> unchecked = notifications.where((n) => n['checked'] == 0).toList();
+
+  if (unchecked.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("🎉 No new notifications.")),
+    );
+    return;
+  }
+
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '🔔 Your Notifications',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ...unchecked.map<Widget>((notif) {
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                child: ListTile(
+                  leading: Icon(
+                    notif['type'] == 'daily reminder'
+                        ? Icons.fitness_center
+                        : Icons.notifications_active,
+                    color: Colors.orangeAccent,
+                  ),
+                  title: Text(notif['type'].toString().toUpperCase()),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (notif['details'] != null)
+                        Text(notif['details'], style: const TextStyle(fontSize: 14)),
+                      Text("📅 ${notif['created_at']}"),
+                    ],
+                  ),
+                  trailing: ElevatedButton(
+                        onPressed: () async {
+                          final prefs = await SharedPreferences.getInstance();
+                          final userId = prefs.getInt('user_id');
+                          final exerciseId = notif['exercise_id'];  // <-- make sure this exists
+                          final selectedDate = notif['date'];  
+                          if (userId == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("User ID not found.")),
+                            );
+                            return;
+                          }
+
+                          final userIdStr = "U${userId.toString().padLeft(3, '0')}";
+                          // 1. Mark exercise as completed
+                          final markStatusResponse = await http.post(
+                            Uri.parse('http://10.0.2.2:5000/mark-exercise-status/$userIdStr'),
+                            headers: {'Content-Type': 'application/json'},
+                            body: jsonEncode({
+                            "status": "completed",
+                            "plan_id": notif['plan_id'],
+                            "exercise_id": exerciseId,
+                            "date": selectedDate,
+                          }),
+                          );
+
+                          if (markStatusResponse.statusCode == 200) {
+                            // 2. Mark notification as checked
+                            final checkNotifResponse = await http.post(
+                              Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
+                            );
+
+                            if (checkNotifResponse.statusCode == 200) {
+                              // 3. Optionally update overall progress
+                              final planId = notif['plan_id'];
+                              if (planId != null) {
+                                await http.post(
+                                  Uri.parse('http://10.0.2.2:5000/check_workout_progress/$planId'),
+                                );
+                              }
+
+                              Navigator.pop(context); // Close modal
+                              _showNotifications(context); // Refresh
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("❌ Failed to mark notification as checked")),
+                              );
+                            }
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("❌ Failed to mark exercise as completed")),
+                            );
+                          }
+                        },
+                      child: const Text("Check"),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+int? _selectedPlanId;
+List<Map<String, dynamic>> _userPlans = [];
+
+Future<void> _fetchUserPlansWithProgress() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getInt('user_id');
+  if (userId == null) return;
+
+  final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
+  final uri = Uri.parse('http://10.0.2.2:5000/get-plans/$formattedUserId');
+
+  try {
+    final response = await http.get(uri);
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      final plans = List<Map<String, dynamic>>.from(data['plans']);
+
+      setState(() {
+        _userPlans = plans;
+
+        // Auto-select the latest or first plan if none selected
+        if (_selectedPlanId == null && plans.isNotEmpty) {
+          _selectedPlanId = plans.first['plan_id'];
+        }
+      });
+    } else {
+      throw Exception('Failed to fetch workout plans. Status: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error in _fetchUserPlansWithProgress: $e');
+  }
+}
+
   Future<String?> _getUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     final dynamic id = prefs.get('user_id');
@@ -192,24 +472,33 @@ class _MainPageState extends State<MainPage> {
     return id.toString();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50], // Light background for modern feel
-      appBar: AppBar(
-        backgroundColor: Colors.grey[50],
-        elevation: 0,
-        title: Text(
-          'Welcome, $_username! 👋', // Display personalized username
-          style: const TextStyle(
-            color: Colors.black87,
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-            fontFamily: 'Inter', // Assuming Inter font is available or set globally
+          @override
+          Widget build(BuildContext context) {
+            return Scaffold(
+              backgroundColor: Colors.grey[50], // Light background for modern feel
+              appBar: AppBar(
+                backgroundColor: Colors.grey[50],
+                automaticallyImplyLeading: false,
+                elevation: 0,
+                title: Text(
+                  'Welcome, $_username! 👋', // Display personalized username
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    fontFamily: 'Inter', // Assuming Inter font is available or set globally
+                  ),
+                ),
+                actions: [
+          IconButton(
+            icon: Icon(Icons.logout, color: Colors.redAccent),
+            tooltip: 'Logout',
+            onPressed: _logout,
           ),
-        ),
-        actions: [
-          // Profile Avatar/Button (can be tapped to go to profile settings)
+          IconButton(
+            icon: Icon(Icons.notifications_none, color: Colors.black87),
+            onPressed: () => _showNotifications(context),
+          ),
           GestureDetector(
             onTap: () {
               Navigator.of(context).pushNamed('/profile'); // Navigate to Profile Page
@@ -219,17 +508,10 @@ class _MainPageState extends State<MainPage> {
               child: CircleAvatar(
                 radius: 20,
                 backgroundColor: Colors.blueAccent.withOpacity(0.1),
-                // Using a placeholder image for now, replace with actual user_avatar.png
-                // Make sure 'lib/assets/images/user_avatar.png' exists
-                // or use a different Asset, NetworkImage, or Icon as fallback
                 child: Image.asset(
                   'lib/assets/images/user_avatar.png',
                   errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.person,
-                      color: Colors.blueAccent,
-                      size: 28,
-                    );
+                    return const Icon(Icons.person, color: Colors.blueAccent, size: 28);
                   },
                 ),
               ),
@@ -244,40 +526,62 @@ class _MainPageState extends State<MainPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Quick Stats/Highlights Card (Your Daily Progress)
-              _buildSectionCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Your Daily Progress',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                          fontFamily: 'Inter'),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildStatItem(
-                            Icons.local_fire_department, 'Calories Left', '1200 kcal', Colors.orange),
-                        _buildStatItem(Icons.run_circle_outlined, 'Steps', '5,200 / 8,000', Colors.green),
-                        _buildStatItem(Icons.fitness_center, 'Workouts', '1/2 Done', Colors.purple),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildProgressBar(
-                      'Overall Goal Progress',
-                      0.6, // Example value
-                      '60% Completed',
-                      Colors.blueAccent,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
+             _buildSectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Your Workout Plan Progress',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                            fontFamily: 'Inter'),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_userPlans.isEmpty)
+                        const Text("No workout plans found."),
+                      if (_userPlans.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DropdownButton<int>(
+                              value: _selectedPlanId,
+                              hint: const Text("Select Plan"),
+                              items: _userPlans.map<DropdownMenuItem<int>>((plan) {
+                                return DropdownMenuItem<int>(
+                                  value: plan['plan_id'],
+                                  child: Text("Plan ${plan['plan_id']} (${plan['duration_months']} month${plan['duration_months'] > 1 ? 's' : ''})"),
+                                );
+                              }).toList(),
+                              onChanged: (int? newId) {
+                                setState(() => _selectedPlanId = newId);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            if (_selectedPlanId != null)
+                              Builder(
+                                builder: (context) {
+                                  final selectedPlan = _userPlans.firstWhere(
+                                    (plan) => plan['plan_id'] == _selectedPlanId,
+                                    orElse: () => {},
+                                  );
 
+                                  if (selectedPlan.isEmpty) return SizedBox();
+
+                                  return _buildProgressBar(
+                                    'Progress for Plan ${selectedPlan['plan_id']}',
+                                    (selectedPlan['progress'] ?? 0) / 100,
+                                    '${selectedPlan['progress']}% Completed',
+                                    Colors.blueAccent,
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
               // 2. Quick Actions Section
               const Text(
                 'Quick Actions',
@@ -321,9 +625,8 @@ class _MainPageState extends State<MainPage> {
                       );
                     }
                   }),
-                  _buildQuickActionButton(Icons.add_task, 'Set Goals', () {
-                    // TODO: Navigate to Goal Setting Page (or a modal)
-                    print('Set Goals');
+                  _buildQuickActionButton(Icons.play_circle_filled, 'Youtube', () {
+                    _launchYouTube('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
                   }),
                 ],
               ),
@@ -335,12 +638,12 @@ class _MainPageState extends State<MainPage> {
                 elevation: 6, // Slightly higher elevation for emphasis
                 child: Row(
                   children: [
-                    const Icon(Icons.lightbulb_outline,
+                    const Icon(Icons.local_fire_department,
                         color: Colors.white, size: 30),
                     const SizedBox(width: 15),
                     Expanded(
                       child: Text(
-                        "Great job! You’re only 30 minutes away from your daily workout goal. Keep pushing!",
+                        _currentMotivationalMessage,
                         style: TextStyle(color: Colors.white, fontSize: 15),
                       ),
                     ),
@@ -422,26 +725,6 @@ class _MainPageState extends State<MainPage> {
                       MaterialPageRoute(builder: (context) => const MealPlansPage()),
                     );
                   }),
-                  _buildUtilityCard(
-                      Icons.chat, 'Chat with AI Coach', Colors.lightGreen, () async {
-                        String? userId = await _getUserId();
-                        if (userId != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => ChatbotPage(userId: userId)),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('User not found. Please log in again.')),
-                          );
-                        }
-                      }
-                  ),
-                  _buildUtilityCard(
-                      Icons.gps_fixed, 'Grocery Locator', Colors.blueGrey, () {
-                    // TODO: Navigate to Grocery Shop Locator
-                    print('Navigate to Grocery Locator');
-                  }),
                 ],
               ),
               const SizedBox(height: 20), // Added buffer at the very bottom
@@ -473,21 +756,22 @@ class _MainPageState extends State<MainPage> {
               break;
             case 2: // Progress
               // TODO: Navigate to Detailed Progress Tracking page
-              print('Navigated to Progress');
-              Navigator.of(context).pushNamed('/progress'); // Assuming a '/progress' route
+              print('Navigated to AI Chatbot');
+              Navigator.push(context, MaterialPageRoute(
+                builder: (context) => ChatbotPage(userId: 'user123'), // Replace with actual user ID
+              ));
               break;
-            case 3: // Settings (aligned with Profile in this case)
-              // TODO: Navigate to Settings/Profile page
-              print('Navigated to Settings');
-              Navigator.of(context).pushNamed('/profile'); // Assuming '/profile' route
+            case 3: // groceryLocator (aligned with Grocery Locator in this case)
+              print('Navigated to groceryLocator');
+              Navigator.of(context).pushNamed('/groceryLocator'); // Assuming '/groceryLocator' route
               break;
           }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.tune_outlined), activeIcon: Icon(Icons.tune), label: 'Customize'), // Changed label to 'Customize', and icon to tune_outlined/tune
-          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), activeIcon: Icon(Icons.insights), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings), label: 'Settings'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat_outlined), activeIcon: Icon(Icons.chat), label: 'AI Chatbot'),
+          BottomNavigationBarItem(icon: Icon(Icons.location_on_outlined), activeIcon: Icon(Icons.location_on), label: 'Grocery Locator'),
         ],
       ),
     );

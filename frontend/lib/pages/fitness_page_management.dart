@@ -1,26 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'edit_fitness_page.dart';
+import 'exercise_model.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-class FitnessPage extends StatefulWidget {
+class FitnessPageManagementPage extends StatefulWidget {
   @override
-  _FitnessPageState createState() => _FitnessPageState();
+  _FitnessPageManagementPageState createState() => _FitnessPageManagementPageState();
 }
 
-class _FitnessPageState extends State<FitnessPage> {
+class _FitnessPageManagementPageState extends State<FitnessPageManagementPage> {
   List<dynamic> _exercises = [];
   bool _isLoading = false;
   bool _hasMore = true;
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-
-  String? _selectedLevel;
-  String? _selectedMechanic;
-  String? _selectedEquipment;
-  String? _selectedPrimaryMuscle;
-  String? _selectedCategory;
 
   int _currentPage = 1;
 
@@ -34,25 +30,17 @@ class _FitnessPageState extends State<FitnessPage> {
   void _onScroll() {
     if (!_hasMore || _isLoading || _searchQuery.isNotEmpty) return;
 
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       _fetchExercises(page: _currentPage + 1);
     }
   }
 
   Future<void> _fetchExercises({int page = 1}) async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     final uri = Uri.http('10.0.2.2:5000', '/exercises', {
       'page': '$page',
       'per_page': '10',
-      if (_selectedLevel != null) 'level': _selectedLevel!,
-      if (_selectedMechanic != null) 'mechanic': _selectedMechanic!,
-      if (_selectedEquipment != null) 'equipment': _selectedEquipment!,
-      if (_selectedPrimaryMuscle != null) 'primaryMuscle': _selectedPrimaryMuscle!,
-      if (_selectedCategory != null) 'category': _selectedCategory!,
     });
 
     try {
@@ -67,51 +55,65 @@ class _FitnessPageState extends State<FitnessPage> {
           _hasMore = exercises.length == 10;
           _currentPage = page;
         });
-      } else {
-        print("Failed to fetch exercises: ${response.statusCode}");
       }
     } catch (e) {
-      print("Error fetching exercise: $e");
+      print("Error: $e");
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _searchExercises(String query) async {
-    if (query.isEmpty) {
-      _searchQuery = '';
-      _exercises.clear();
+  Future<void> _deleteExercise(int id) async {
+    final response = await http.delete(Uri.parse('http://10.0.2.2:5000/delete-exercise/$id'));
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Exercise deleted")));
       _fetchExercises();
-      return;
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Delete failed")));
     }
+  }
 
-    setState(() {
-      _isLoading = true;
-      _searchQuery = query;
-    });
+  void _showDeleteDialog(int id) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text("Delete Exercise"),
+        content: Text("Are you sure you want to delete this exercise?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text("Cancel")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteExercise(id);
+            },
+            child: Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 
-    final url = Uri.parse('http://10.0.2.2:5000/search?q=$query');
+  void _navigateToEditPage(dynamic exMap) {
+    final exercise = Exercise(
+      id: exMap['Exercise_ID'],
+      name: exMap['name'] ?? '',
+      level: exMap['level'] ?? '',
+      mechanic: exMap['mechanic'] ?? '',
+      equipment: exMap['equipment'] ?? '',
+      primaryMuscles: exMap['primaryMuscles'] is String
+      ? List<String>.from(jsonDecode(exMap['primaryMuscles']))
+      : List<String>.from(exMap['primaryMuscles'] ?? []),
+      category: exMap['category'] ?? '',
+      instructions: List<String>.from(exMap['instructions'] ?? []),
+      imageUrls: List<String>.from(exMap['image_urls'] ?? []),
+    );
 
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _exercises = data['exercises'];
-          _hasMore = false;
-        });
-      } else {
-        print("Search failed: ${response.statusCode}");
-      }
-    } catch (e) {
-      print("Error during search: $e");
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddOrEditExercisePage(exercise: exercise),
+      ),
+    ).then((_) => _fetchExercises());
   }
 
   @override
@@ -121,73 +123,44 @@ class _FitnessPageState extends State<FitnessPage> {
     super.dispose();
   }
 
-  Widget _buildDropdown<T>(String label, T? selected, List<T> options, ValueChanged<T?> onChanged) {
-    return DropdownButton<T>(
-      hint: Text(label),
-      value: selected,
-      onChanged: onChanged,
-      items: options.map((T value) {
-        return DropdownMenuItem<T>(
-          value: value,
-          child: Text(value.toString()),
-        );
-      }).toList(),
-    );
+  void _navigateToAddPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddOrEditExercisePage(),
+      ),
+    ).then((_) => _fetchExercises());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Fitness Exercises')),
+      appBar: AppBar(title: Text('Manage Exercises')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _navigateToAddPage(),
+        child: Icon(Icons.add),
+        tooltip: 'Add New Exercise',
+      ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(10),
-            child: Column(
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          labelText: 'Search exercises',
-                          border: OutlineInputBorder(),
-                        ),
-                        onSubmitted: _searchExercises,
-                      ),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      labelText: 'Search exercises',
+                      border: OutlineInputBorder(),
                     ),
-                    SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () => _searchExercises(_searchController.text),
-                      child: Text('Search'),
-                    ),
-                  ],
+                    onSubmitted: (q) => _fetchExercises(page: 1),
+                  ),
                 ),
-                Wrap(
-                  spacing: 10,
-                  children: [
-                    _buildDropdown('Level', _selectedLevel, ['beginner', 'intermediate', 'expert'], (val) {
-                      setState(() => _selectedLevel = val);
-                      _fetchExercises();
-                    }),
-                    _buildDropdown('Mechanic', _selectedMechanic, ['null', 'isolation', 'compound'], (val) {
-                      setState(() => _selectedMechanic = val);
-                      _fetchExercises();
-                    }),
-                    _buildDropdown('Equipment', _selectedEquipment, ['null', 'medicine ball', 'dumbbell', 'body only', 'bands', 'kettlebells', 'foam roll', 'cable', 'machine', 'barbell', 'exercise ball', 'e-z curl bar', 'other'], (val) {
-                      setState(() => _selectedEquipment = val);
-                      _fetchExercises();
-                    }),
-                    _buildDropdown('Primary Muscle', _selectedPrimaryMuscle, ["abdominals", "abductors", "adductors", "biceps", "calves", "chest", "forearms", "glutes", "hamstrings", "lats", "lower back", "middle back", "neck", "quadriceps", "shoulders", "traps", "triceps"], (val) {
-                      setState(() => _selectedPrimaryMuscle = val);
-                      _fetchExercises();
-                    }),
-                    _buildDropdown('Category', _selectedCategory, ["powerlifting", "strength", "stretching", "cardio", "olympic weightlifting", "strongman", "plyometrics"], (val) {
-                      setState(() => _selectedCategory = val);
-                      _fetchExercises();
-                    }),
-                  ],
+                SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: () => _fetchExercises(page: 1),
+                  child: Text('Refresh'),
                 ),
               ],
             ),
@@ -253,6 +226,23 @@ class _FitnessPageState extends State<FitnessPage> {
                                 final cleaned = step.toString().replaceAll(RegExp(r'[\[\]"]'), '').trim();
                                 return Text('• $cleaned');
                               }) ?? [Text("No instructions available")]),
+                              SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton.icon(
+                                    icon: Icon(Icons.edit, color: Colors.blue),
+                                    label: Text("Edit"),
+                                    onPressed: () => _navigateToEditPage(ex),
+                                  ),
+                                  SizedBox(width: 10),
+                                  TextButton.icon(
+                                    icon: Icon(Icons.delete, color: Colors.red),
+                                    label: Text("Delete"),
+                                    onPressed: () => _showDeleteDialog(ex['Exercise_ID']),
+                                  ),
+                                ],
+                              )
                             ],
                           ),
                         ),

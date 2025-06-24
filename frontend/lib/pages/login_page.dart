@@ -5,10 +5,11 @@ import 'package:frontend/pages/admin_main_page.dart';
 import 'package:frontend/pages/main_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter/animation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
-
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
 import '../main.dart';
 import 'forget_password_page.dart';
 class LoginPage extends StatefulWidget {
@@ -28,6 +29,23 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   late Animation<double> _scaleAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<Color?> _colorAnimation;
+
+Future<void> writeLog(String username, String action) async {
+  try {
+    final directory = await getApplicationDocumentsDirectory();
+    final filePath = '${directory.path}/activity_log.txt';
+    final file = File(filePath);
+
+    final now = DateTime.now();
+    final formattedTime = DateFormat('HH:mm:ss dd/MM/yyyy').format(now);
+    final logLine = '-- $username has been $action at $formattedTime\n';
+
+    await file.writeAsString(logLine, mode: FileMode.append); // Append to the file
+    print('✅ Log written: $logLine');
+  } catch (e) {
+    print('❌ Failed to write log: $e');
+  }
+}
 
   @override
   void initState() {
@@ -108,6 +126,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         await prefs.setBool('isLoggedIn', true);
         await prefs.setString('username', _username.text);
         
+        await writeLog(_username.text, 'logged in');
         // Store user role
         int role = data['role'] ?? 1; // Default to normal user
         await prefs.setInt('role', role);
@@ -396,7 +415,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                     ),
                                     InkWell(
                                       onTap: () {
-                                        Navigator.pushReplacementNamed(
+                                        Navigator.pushNamed(
                                           context, 
                                           '/signup'
                                         );
