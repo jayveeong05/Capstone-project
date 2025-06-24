@@ -60,7 +60,7 @@ class MealScanHistory {
       userId: json['user_id'],
       imagePath: json['image_path'],
       foodName: json['food_name'],
-      calories: json['calories'],
+      calories: (json['calories'] as num).toInt(),
       nutrients: json['nutrients'],
       timestamp: DateTime.parse(json['timestamp']),
     );

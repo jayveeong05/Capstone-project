@@ -1,3 +1,4 @@
+from json import scanner
 from flask import Flask, request, jsonify,send_from_directory,current_app
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,8 +12,12 @@ import shutil
 import json
 import uuid
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+import io
 from PIL import Image
+import requests
 from food_recognition import FoodRecognition
+from diet_plan_system import DietPlanSystem, integrate_diet_system_with_app, setup_diet_plan_routes
 import google.generativeai as genai
 from dateutil.relativedelta import relativedelta
 from collections import Counter
@@ -68,9 +73,10 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('./backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = get_db_connection()
@@ -110,18 +116,6 @@ def init_db():
                 status TEXT,
                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
 
-    # Create UserDietPreference table
-    c.execute('''CREATE TABLE IF NOT EXISTS UserDietPreference
-                (diet_pref_id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                ingredient_id TEXT,
-                diet_type TEXT,
-                dietary_goal TEXT,
-                allergies TEXT,
-                calories INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES User(user_id))''')
-
 
     # Create MealScans table
     c.execute('''CREATE TABLE IF NOT EXISTS MealScans
@@ -147,6 +141,7 @@ def init_db():
                 
     conn.commit()
     conn.close()
+
 
 def generate_user_id():
     conn = get_db_connection()
@@ -1686,30 +1681,31 @@ def suggest_meals():
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Get ingredient IDs for the provided names
-    if not available_names:
-        return jsonify({'meals': []})
+    # allow fallback to show all meals if no ingredients are provided
+    ingredient_filtering = bool(available_names)
+    available_names_set = set(available_names)
 
     q_marks = ','.join('?' for _ in available_names)
-    c.execute(f"SELECT ingredient_id, ingredient_name FROM Ingredient WHERE lower(ingredient_name) IN ({q_marks})", available_names)
+    c.execute(f"SELECT ingredient_id, name FROM Ingredient WHERE lower(name) IN ({q_marks})", available_names)
     id_map = {row[1].strip().lower(): row[0] for row in c.fetchall()}
     available_ids = set(id_map.values())
 
     # Fetch all ingredient id-name pairs for lookup
-    c.execute("SELECT ingredient_id, ingredient_name FROM Ingredient")
+    c.execute("SELECT ingredient_id, name FROM Ingredient")
     id_to_name = {str(row[0]): row[1] for row in c.fetchall()}
 
     # Fetch all recipes
-    c.execute("SELECT recipe_id, title, description, ingredients, instructions, nutrition_info, created_at FROM RecipeLibrary")
+    c.execute("SELECT recipe_id, title, description, ingredients, instructions, nutrition_info FROM RecipeLibrary")
     recipes = c.fetchall()
 
     suggested_meals = []
     for recipe in recipes:
-        recipe_ids = set(recipe[3].split(','))
-        match_count = len(available_ids & recipe_ids)
-        if match_count > 0:
-            match_percentage = (match_count / len(recipe_ids)) * 100
-            # Convert ingredient IDs to names for display
+        recipe_ingredients = [ing.strip().lower() for ing in recipe[3].split(',')]
+        match_count = len(set(recipe_ingredients) & available_names_set)
+        match_percentage = (match_count / len(recipe_ingredients)) * 100 if recipe_ingredients else 0
+
+        # Always include the meal, but show match % only if filtering
+        if ingredient_filtering or not ingredient_filtering:
             ingredient_names = [id_to_name.get(rid.strip(), rid.strip()) for rid in recipe[3].split(',')]
             suggested_meals.append({
                 'recipe_id': recipe[0],
@@ -1718,8 +1714,7 @@ def suggest_meals():
                 'ingredients': ', '.join(ingredient_names),
                 'instructions': recipe[4],
                 'nutrition_info': recipe[5],
-                'created_at': recipe[6],
-                'match_percentage': round(match_percentage, 1)
+                'match_percentage': round(match_percentage, 1) if ingredient_filtering else 0
             })
 
     suggested_meals.sort(key=lambda x: x['match_percentage'], reverse=True)
@@ -1820,9 +1815,9 @@ def scan_meal():
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('''
-            INSERT INTO MealScans (meal_scan_id, user_id, food_name, calories, nutrients, image_path)
+            INSERT INTO MealScans (meal_scan_id, user_id, image_path, food_name, calories, nutrients)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (meal_scan_id, user_id, food_name, calories, json.dumps(nutrients), file_path))
+        ''', (meal_scan_id, user_id, file_path, food_name, calories, json.dumps(nutrients)))
         conn.commit()
         conn.close()
         
@@ -2822,6 +2817,9 @@ if __name__ == '__main__':
     
     # Initialize database
     init_db()
+    diet_system = DietPlanSystem(get_db_connection)
+    diet_system.init_diet_plan_tables()
+    setup_diet_plan_routes(app, diet_system)
     
     # Set max file size
     app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
@@ -2836,5 +2834,7 @@ if __name__ == '__main__':
     print("  GET  /api/nutrition-info/<food_name> - Get nutrition info")
     print("  GET  /api/search-food - Search food items")
     print("  GET  /api/images/<filename> - Serve images")
-    
+    print("\n--- Registered Routes ---")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.rule} [{rule.methods}]")
 app.run(host='0.0.0.0', port=5000, debug=True)

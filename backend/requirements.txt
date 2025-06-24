@@ -1,7 +1,7 @@
 flask
 flask-cors
 werkzeug
-clarifai-grpc
+clarifai
 pillow
 requests
 google-generativeai

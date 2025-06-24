@@ -6,6 +6,8 @@ import 'all_workoutplan_page.dart';
 import 'MealPlansPage.dart';
 import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
+import 'diet_plan_page.dart'; 
+import 'MealLoggingPage.dart';
 import 'package:http/http.dart'as http;
 import 'dart:convert';
 import 'dart:io';
@@ -463,6 +465,13 @@ Future<void> _fetchUserPlansWithProgress() async {
   }
 }
 
+  Future<String?> _getUserId() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final dynamic id = prefs.get('user_id');
+    if (id == null) return null;
+    return id.toString();
+  }
+
           @override
           Widget build(BuildContext context) {
             return Scaffold(
@@ -592,20 +601,29 @@ Future<void> _fetchUserPlansWithProgress() async {
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _buildQuickActionButton(Icons.restaurant_menu, 'Log Meal', () {
-                    // TODO: Open Meal Logging Interface
-                    print('Open Meal Logging');
+                    // Navigator.push(
+                    //   context,
+                    //   MaterialPageRoute(builder: (context) => const MealLoggingPage()),
+                    // );
+                    print('Log Meal');
                   }),
                   _buildQuickActionButton(Icons.mic, 'Voice Log', () {
                     // TODO: Activate Voice Logging
                     print('Activate Voice Log');
                   }),
-                  _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () {
-                    // TODO: Open Meal Scanner
-                    // print('Open Meal Scanner');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MealScannerScreen(userId: 'user123')), // TODO: Replace with actual user ID
-                    );
+                  _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () async {
+                    String? userId = await _getUserId();
+                    if (userId != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => MealScannerScreen(userId: userId)),
+                      );
+                    } else {
+                      // Handle missing user ID (e.g., show error or redirect to login)
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('User not found. Please log in again.')),
+                      );
+                    }
                   }),
                   _buildQuickActionButton(Icons.play_circle_filled, 'Youtube', () {
                     _launchYouTube('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
@@ -673,14 +691,22 @@ Future<void> _fetchUserPlansWithProgress() async {
                     ),
                   _buildUtilityCard(
                       Icons.restaurant_menu, 'Meal Plans', Colors.teal,
-                      () {
-                    // TODO: Navigate to Meal Plan Page
-                    // print('Navigate to Meal Plan');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MealPlansPage()),
-                    );
-                  }),
+                      () async {
+                        String? userId = await _getUserId();
+                        if (userId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DietPlansPage(userId: userId),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('User not found. Please log in again.')),
+                          );
+                        }
+                      },
+                  ),
                   _buildUtilityCard(
                       Icons.video_library, 'Exercise Library', Colors.redAccent,
                       () {
@@ -694,6 +720,10 @@ Future<void> _fetchUserPlansWithProgress() async {
                       () {
                     // TODO: Navigate to Meal Library
                     print('Navigate to Meal Library');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MealPlansPage()),
+                    );
                   }),
                 ],
               ),

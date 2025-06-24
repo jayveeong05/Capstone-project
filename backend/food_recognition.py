@@ -1,17 +1,22 @@
-from clarifai_grpc.channel.clarifai_channel import ClarifaiChannel
-from clarifai_grpc.grpc.api import resources_pb2, service_pb2, service_pb2_grpc
-from clarifai_grpc.grpc.api.status import status_code_pb2
-import base64
+import os
+
+# Windows fix for Clarifai SDK expecting HOME env var
+if 'HOME' not in os.environ and 'USERPROFILE' in os.environ:
+    os.environ['HOME'] = os.environ['USERPROFILE']
+
+from clarifai.client.model import Model
 import requests
 
 CALORIE_NINJAS_KEY = "xlpLBxkUsNH26Y4BpTOw3w==Im0PN24qUdhmFUUN"
 SPOONACULAR_KEY = "cbb19f2f2979416f8600b99ba191710b"
 
 class FoodRecognition:
-    def __init__(self, api_key):
+    def __init__(self, api_key=None):
         self.api_key = api_key
-        self.stub = service_pb2_grpc.V2Stub(ClarifaiChannel.get_grpc_channel())
-        self.metadata = (('authorization', f'Key {self.api_key}'),)
+        self.pat = 'a0e460e9f62f447da1b7599a23d5450d'
+        self.model_url = "https://clarifai.com/clarifai/main/models/food-item-recognition"
+        self.model = Model(url=self.model_url, pat=self.pat)
+
 
     def analyze_image(self, image_path):
         """
@@ -22,40 +27,21 @@ class FoodRecognition:
             with open(image_path, "rb") as f:
                 file_bytes = f.read()
 
-            # Construct the request
-            request = service_pb2.PostModelOutputsRequest(
-                model_id='food-item-recognition',  # Using Clarifai's food recognition model
-                inputs=[
-                    resources_pb2.Input(
-                        data=resources_pb2.Data(
-                            image=resources_pb2.Image(
-                                base64=file_bytes
-                            )
-                        )
-                    )
-                ]
-            )
+            response = self.model.predict_by_bytes(file_bytes)
 
-            # Make the request
-            response = self.stub.PostModelOutputs(request, metadata=self.metadata)
-
-            # Check response status
-            if response.status.code != status_code_pb2.SUCCESS:
+            if not response.outputs or not response.outputs[0].data.concepts:
                 return {
                     'success': False,
-                    'error': f'Failed to analyze image: {response.status.description}'
+                    'error': 'No food items detected'
                 }
 
-            # Process results
             results = []
-            if response.outputs and response.outputs[0].data.concepts:
-                for concept in response.outputs[0].data.concepts:
-                    results.append({
-                        'name': concept.name,
-                        'confidence': round(concept.value * 100, 2)
-                    })
+            for concept in response.outputs[0].data.concepts:
+                results.append({
+                    'name': concept.name,
+                    'confidence': round(concept.value * 100, 2)
+                })
 
-            # Sort by confidence and get top results
             results.sort(key=lambda x: x['confidence'], reverse=True)
             top_result = results[0] if results else {'name': 'Unknown Food', 'confidence': 0}
             alternatives = [r['name'] for r in results[1:4]] if len(results) > 1 else []
@@ -65,7 +51,7 @@ class FoodRecognition:
                 'food_name': top_result['name'],
                 'confidence': top_result['confidence'],
                 'alternatives': alternatives,
-                'all_results': results[:5]  # Return top 5 results
+                'all_results': results[:5]
             }
 
         except Exception as e:
@@ -73,6 +59,7 @@ class FoodRecognition:
                 'success': False,
                 'error': f'Error analyzing image: {str(e)}'
             }
+
 
     def get_nutrition_info(self, food_name):
         """
