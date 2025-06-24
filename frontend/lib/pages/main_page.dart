@@ -6,6 +6,7 @@ import 'MealPlansPage.dart';
 import 'MealScannerScreen.dart';
 import 'ChatbotPage.dart';
 import 'diet_plan_page.dart'; 
+import 'MealLoggingPage.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -296,8 +297,11 @@ class _MainPageState extends State<MainPage> {
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _buildQuickActionButton(Icons.restaurant_menu, 'Log Meal', () {
-                    // TODO: Open Meal Logging Interface
-                    print('Open Meal Logging');
+                    // Navigator.push(
+                    //   context,
+                    //   MaterialPageRoute(builder: (context) => const MealLoggingPage()),
+                    // );
+                    print('Log Meal');
                   }),
                   _buildQuickActionButton(Icons.mic, 'Voice Log', () {
                     // TODO: Activate Voice Logging

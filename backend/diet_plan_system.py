@@ -66,6 +66,69 @@ class DietPlanSystem:
             return f'DP{numeric_part:03d}'
         else:
             return 'DP001'
+        
+    def log_user_meal(self, data):
+        """Logs a user's meal and syncs it with their daily progress"""
+        try:
+            user_id = data['user_id']
+            diet_plan_id = data.get('diet_plan_id')
+            meal_type = data['meal_type']
+            meal_name = data['meal_name']
+            calories = float(data['calories'])
+            notes = data.get('notes', '')
+            log_date = date.today()
+
+            if user_id.isdigit():
+                user_id = f"U{int(user_id):03d}"
+
+            conn = self.get_db_connection()
+            c = conn.cursor()
+
+            # Ensure there's a progress row for today
+            c.execute("""
+                SELECT * FROM UserDietPlanProgress
+                WHERE user_id = ? AND diet_plan_id = ? AND date = ?
+            """, (user_id, diet_plan_id, log_date))
+
+            progress = c.fetchone()
+
+            if progress:
+                progress_id = progress['progress_id']
+                new_calories = progress['calories_consumed'] + calories
+                new_meals = progress['meals_completed'] + 1
+
+                c.execute("""
+                    UPDATE UserDietPlanProgress
+                    SET calories_consumed = ?, meals_completed = ?
+                    WHERE progress_id = ?
+                """, (new_calories, new_meals, progress_id))
+            else:
+                progress_id = f"PG{uuid.uuid4().hex[:8]}"
+                c.execute("""
+                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, meals_completed)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (progress_id, user_id, diet_plan_id, log_date, calories, 1))
+
+            # Log the meal
+            meal_id = f"LM{uuid.uuid4().hex[:8]}"
+            c.execute("""
+                INSERT INTO LoggedMeal (meal_id, user_id, diet_plan_id, progress_id, meal_type, meal_name, calories, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (meal_id, user_id, diet_plan_id, progress_id, meal_type, meal_name, calories, notes))
+
+            conn.commit()
+            conn.close()
+
+            return {
+                'success': True,
+                'message': 'Meal logged and progress updated successfully',
+                'meal_id': meal_id,
+                'progress_id': progress_id
+            }
+
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
     
     def get_user_dietary_preferences(self, user_id):
         """Get user's dietary preferences and goals"""
@@ -389,17 +452,6 @@ class DietPlanSystem:
                     FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id),
                     FOREIGN KEY (recipe_id) REFERENCES RecipeLibrary(recipe_id))''')
         
-        # # Create NutritionTargets table
-        # c.execute('''CREATE TABLE IF NOT EXISTS NutritionTargets
-        #             (target_id TEXT PRIMARY KEY,
-        #             diet_plan_id TEXT NOT NULL,
-        #             daily_calories INTEGER,
-        #             protein_grams INTEGER,
-        #             carbs_grams INTEGER,
-        #             fat_grams INTEGER,
-        #             fiber_grams INTEGER,
-        #             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        #             FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
         
         # Create UserDietPlanProgress table
         c.execute('''CREATE TABLE IF NOT EXISTS UserDietPlanProgress
@@ -415,6 +467,22 @@ class DietPlanSystem:
                     FOREIGN KEY (user_id) REFERENCES User(user_id),
                     FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id))''')
 
+        # Create LoggedMeal table
+        c.execute('''CREATE TABLE IF NOT EXISTS LoggedMeal (
+                        meal_id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        diet_plan_id TEXT,
+                        progress_id TEXT,
+                        meal_type TEXT NOT NULL,
+                        meal_name TEXT NOT NULL,
+                        calories REAL NOT NULL,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES User(user_id),
+                        FOREIGN KEY (diet_plan_id) REFERENCES DietPlan(diet_plan_id),
+                        FOREIGN KEY (progress_id) REFERENCES UserDietPlanProgress(progress_id)
+                    );''')
+        
         # Create UserDietPreference table
         c.execute('''CREATE TABLE IF NOT EXISTS UserDietPreference
                     (diet_pref_id TEXT PRIMARY KEY,
@@ -958,6 +1026,84 @@ def setup_diet_plan_routes(app, diet_system):
 
         except Exception as e:
             return jsonify({'error': f'Failed to fetch ingredients: {str(e)}'}), 500
+        
+    @app.route('/api/meal-name-suggestions/<query>', methods=['GET'])
+    def get_meal_name_suggestions(query):
+        """Return a list of recipe title suggestions from RecipeLibrary based on user input"""
+        try:
+            conn = diet_system.get_db_connection()
+            c = conn.cursor()
+            
+            c.execute("""
+                SELECT DISTINCT title
+                FROM RecipeLibrary
+                WHERE LOWER(title) LIKE ?
+                ORDER BY title ASC
+                LIMIT 10
+            """, (f"%{query.lower()}%",))
+
+            suggestions = [row['title'] for row in c.fetchall()]
+            
+            conn.close()
+            return jsonify(suggestions), 200
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to fetch recipe suggestions: {str(e)}'}), 500
+
+        
+    @app.route('/api/log-meal', methods=['POST'])
+    def log_meal_route():
+        """API route to log a user meal"""
+        data = request.get_json()
+        result = diet_system.log_user_meal(data)
+        return jsonify(result), 200 if result.get('success') else 500
+
+    @app.route('/api/logged-meals/<user_id>', methods=['GET'])
+    def get_logged_meals_route(user_id):
+        """Get user's logged meal history, grouped by date"""
+        try:
+            if user_id.isdigit():
+                user_id = f"U{int(user_id):03d}"
+
+            conn = diet_system.get_db_connection()
+            c = conn.cursor()
+
+            c.execute("""
+                SELECT meal_id, diet_plan_id, meal_type, meal_name, calories, notes, created_at, date(lp.date) AS log_date
+                FROM LoggedMeal lm
+                LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
+                WHERE lm.user_id = ?
+                ORDER BY log_date DESC, created_at DESC
+            """, (user_id,))
+
+            rows = c.fetchall()
+            conn.close()
+
+            # Group by date
+            history = {}
+            for row in rows:
+                log_date = row['log_date'] or row['created_at'][:10]
+                if log_date not in history:
+                    history[log_date] = []
+
+                history[log_date].append({
+                    'meal_id': row['meal_id'],
+                    'diet_plan_id': row['diet_plan_id'],
+                    'meal_type': row['meal_type'],
+                    'meal_name': row['meal_name'],
+                    'calories': row['calories'],
+                    'notes': row['notes'],
+                    'logged_at': row['created_at']
+                })
+
+            return jsonify({
+                'success': True,
+                'logged_meals': history
+            })
+
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'Failed to fetch logged meals: {str(e)}'}), 500
+
 
 
 
