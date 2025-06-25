@@ -67,6 +67,61 @@ class DietPlanSystem:
         else:
             return 'DP001'
         
+    def generate_progress_id(self):
+        """
+        Generate a unique and sequential progress ID (e.g., PRG001, PRG002).
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT progress_id FROM UserDietPlanProgress ORDER BY progress_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            
+            if last_id_row:
+                last_id = last_id_row['progress_id']
+                # Extract numeric part, convert to int, increment
+                numeric_part = int(last_id[3:]) + 1
+            else:
+                # If no existing progress IDs, start from 1
+                numeric_part = 1
+            
+            # Format to PRG001, PRG002 etc.
+            return f'PRG{numeric_part:03d}'
+        except Exception as e:
+            print(f"Error generating progress ID: {e}")
+            # Fallback or re-raise, depending on desired error handling
+            # For now, let's just use a UUID as a fallback to prevent blocking
+            return f"PRG{int(uuid.uuid4().hex[:8], 16):08d}" 
+        finally:
+            conn.close()
+
+    def generate_logged_meal_id(self):
+        """
+        Generate a unique and sequential logged meal ID (e.g., LM001, LM002).
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT meal_id FROM LoggedMeal ORDER BY meal_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            
+            if last_id_row:
+                last_id = last_id_row['meal_id']
+                # Extract numeric part, convert to int, increment
+                numeric_part = int(last_id[2:]) + 1
+            else:
+                # If no existing meal IDs, start from 1
+                numeric_part = 1
+            
+            # Format to LM001, LM002 etc.
+            return f'LM{numeric_part:03d}'
+        except Exception as e:
+            print(f"Error generating logged meal ID: {e}")
+            # Fallback or re-raise. Using UUID as fallback to prevent blocking
+            return f"LM{uuid.uuid4().hex[:8]}"
+        finally:
+            conn.close()
+        
     def log_user_meal(self, data):
         """Logs a user's meal and syncs it with their daily progress"""
         try:
@@ -115,14 +170,14 @@ class DietPlanSystem:
                     WHERE progress_id = ?
                 """, (new_calories, new_meals, progress_id))
             else:
-                progress_id = f"PG{uuid.uuid4().hex[:8]}"
+                progress_id = self.generate_progress_id()
                 c.execute("""
                     INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, meals_completed)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (progress_id, user_id, diet_plan_id, log_date, calories, 1))
 
             # Log the meal
-            meal_id = f"LM{uuid.uuid4().hex[:8]}"
+            meal_id = self.generate_logged_meal_id()
             c.execute("""
                 INSERT INTO LoggedMeal (meal_id, user_id, diet_plan_id, progress_id, meal_type, meal_name, calories, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -155,13 +210,14 @@ class DietPlanSystem:
         try:
             # Calculate total calories from all meals logged for this user on this date
             c.execute("""
-                SELECT SUM(calories) AS total_calories
+                SELECT SUM(calories) AS total_calories, COUNT(meal_id) AS total_meals
                 FROM LoggedMeal
                 WHERE user_id = ? AND date(created_at) = ?
             """, (user_id, log_date))
             
             result = c.fetchone()
             new_total_calories = result['total_calories'] if result and result['total_calories'] is not None else 0
+            new_total_meals = result['total_meals'] if result and result['total_meals'] is not None else 0
 
             # Get or create progress entry for the date
             c.execute("SELECT progress_id FROM UserDietPlanProgress WHERE user_id = ? AND date = ?",
@@ -172,9 +228,9 @@ class DietPlanSystem:
                 # Update existing progress entry
                 c.execute("""
                     UPDATE UserDietPlanProgress
-                    SET calories_consumed = ?
+                    SET calories_consumed = ?, meals_completed = ?
                     WHERE progress_id = ?
-                """, (new_total_calories, progress_entry['progress_id']))
+                """, (new_total_calories, new_total_meals, progress_entry['progress_id']))
                 print(f"Updated progress for {user_id} on {log_date} to {new_total_calories} calories.")
             else:
                 # This should ideally not happen if meals are logged correctly,
@@ -187,13 +243,13 @@ class DietPlanSystem:
                     raise Exception("No active diet plan found for user. Cannot update progress.")
                 
                 diet_plan_id = diet_plan_id_row['diet_plan_id']
-                progress_id = f"PRG{int(uuid.uuid4().hex[:8], 16):08d}" # Generate unique progress ID
+                progress_id = self.generate_progress_id()
 
                 c.execute("""
-                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (progress_id, user_id, diet_plan_id, log_date, new_total_calories))
-                print(f"Created new progress entry for {user_id} on {log_date} with {new_total_calories} calories.")
+                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, meals_completed)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (progress_id, user_id, diet_plan_id, log_date, new_total_calories, new_total_meals))
+                print(f"Created new progress entry for {user_id} on {log_date} with {new_total_calories} calories and {new_total_meals} meals.")
 
             conn.commit()
             return True
@@ -288,6 +344,42 @@ class DietPlanSystem:
             conn.rollback()
             print(f"Error updating meal {meal_id}: {e}")
             return {'success': False, 'error': f'Failed to update meal: {str(e)}'}
+        finally:
+            conn.close()
+
+    def get_user_progress_for_date(self, user_id, target_date):
+        """
+        Retrieves a user's diet plan progress for a specific date.
+        target_date should be in 'YYYY-MM-DD' format.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                SELECT
+                    progress_id,
+                    user_id,
+                    diet_plan_id,
+                    date,
+                    calories_consumed,
+                    meals_completed,
+                    weight,
+                    notes,
+                    created_at
+                FROM UserDietPlanProgress
+                WHERE user_id = ? AND date = ?
+            """, (user_id, target_date))
+            
+            progress_data = c.fetchone()
+            
+            if progress_data:
+                return {'success': True, 'progress': dict(progress_data)}
+            else:
+                return {'success': False, 'message': 'No progress found for this date.'}
+        except sqlite3.Error as e:
+            return {'success': False, 'error': f'Database error: {str(e)}'}
+        except Exception as e:
+            return {'success': False, 'error': f'An unexpected error occurred: {str(e)}'}
         finally:
             conn.close()
     
@@ -1118,8 +1210,8 @@ def setup_diet_plan_routes(app, diet_system):
             
             conn = diet_system.get_db_connection()
             c = conn.cursor()
-            
-            progress_id = f"PG{uuid.uuid4().hex[:8]}"
+
+            progress_id = self.generate_progress_id()
             current_date = datetime.now().date()
             
             c.execute("""
@@ -1323,6 +1415,27 @@ def setup_diet_plan_routes(app, diet_system):
         data = request.get_json()
         result = diet_system.update_logged_meal(meal_id, data)
         return jsonify(result), 200 if result.get('success') else 500
+    
+    @app.route('/api/user-progress/<user_id>/<date>', methods=['GET'])
+    def get_user_progress_by_date_route(user_id, date):
+        """Get user's diet plan progress for a specific date."""
+        try:
+            # Normalize user_id: handle int or string
+            if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
+                user_id = f"U{int(user_id):03d}"
+
+            # Validate date format (optional but recommended)
+            try:
+                datetime.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD.'}), 400
+
+            result = diet_system.get_user_progress_for_date(user_id, date)
+            return jsonify(result), 200 if result.get('success') else 404 # Return 404 if no progress found
+
+        except Exception as e:
+            print(f"Error fetching user progress by date: {e}")
+            return jsonify({'success': False, 'error': f'Failed to fetch user progress: {str(e)}'}), 500
 
 
 

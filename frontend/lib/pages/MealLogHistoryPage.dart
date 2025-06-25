@@ -1,6 +1,7 @@
 // In MealLogHistoryPage.dart
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -22,6 +23,7 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
   void initState() {
     super.initState();
     _loadMealLogs();
+    _checkAndShowMealReminder();
   }
 
   // --- Utility function to get meal icon (existing) ---
@@ -83,6 +85,74 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
     setState(() {
       isLoading = false; // Set loading to false once data is fetched or error occurs
     });
+  }
+
+  void _showMealReminderDialog(String title, String content, {bool isError = false}) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(title, style: TextStyle(color: isError ? Colors.red : Colors.blueAccent)),
+          content: Text(content),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _checkAndShowMealReminder() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userIdInt = prefs.getInt('user_id');
+    if (userIdInt == null) {
+      // No user ID, can't check reminder. Error already handled by _loadMealLogs or other parts.
+      return;
+    }
+    final userId = 'U${userIdInt.toString().padLeft(3, '0')}';
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final String apiUrl = 'http://10.0.2.2:5000/api/user-progress/$userId/$today';
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      String title = 'Daily Meal Reminder';
+      String message;
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success']) {
+          final int mealsCompleted = data['progress']['meals_completed'];
+          if (mealsCompleted < 3) {
+            message = 'You\'ve logged $mealsCompleted meals today. Aim for at least 3!';
+          } else {
+            message = 'Great job! You\'ve logged $mealsCompleted meals today. Keep it up!';
+          }
+        } else {
+          if (data['message'] == 'No progress found for this date.') {
+             message = 'No meals logged today. Don\'t forget to log your meals!';
+          } else {
+             message = 'Failed to get your meal progress: ${data['error'] ?? data['message']}';
+             title = 'Meal Reminder Error';
+          }
+        }
+      } else {
+        message = 'Server error (${response.statusCode}) while checking meal progress.';
+        title = 'Meal Reminder Error';
+      }
+      _showMealReminderDialog(title, message, isError: title.contains('Error'));
+    } catch (e) {
+      _showMealReminderDialog(
+        'Meal Reminder Error',
+        'Could not connect to the server to check meal progress. Please check your internet connection.',
+        isError: true,
+      );
+      print('Error checking meal reminder: $e');
+    }
   }
 
   // Delete Meal function
@@ -168,6 +238,7 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
     // If a new meal was successfully logged, reload the history page
     if (result == true) {
       _loadMealLogs();
+      _checkAndShowMealReminder();
     }
   }
 
