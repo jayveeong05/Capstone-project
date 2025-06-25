@@ -171,6 +171,16 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
     }
   }
 
+  Map<String, dynamic> _calculateDailySummary(List<dynamic> mealsForDate) {
+    int totalCalories = 0;
+    int mealsCompleted = mealsForDate.length;
+
+    for (var meal in mealsForDate) {
+      totalCalories += (meal['calories'] as num? ?? 0).toInt();
+    }
+    return {'totalCalories': totalCalories, 'mealsCompleted': mealsCompleted};
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -187,6 +197,9 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
               : ListView(
                   children: mealLogsByDate.keys.map((date) {
                     final mealsForDate = mealLogsByDate[date]!;
+                    final dailySummary = _calculateDailySummary(mealsForDate);
+                    final totalCalories = dailySummary['totalCalories'];
+                    final mealsCompleted = dailySummary['mealsCompleted'];
                     return Card(
                       margin: const EdgeInsets.all(8.0),
                       child: ExpansionTile(
@@ -197,6 +210,7 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
                         ),
                         // Optionally, add a summary for the day here
                         // trailing: Text('Total Kcal: ${calculateDailyTotal(mealsForDate)}'),
+                        subtitle: Text('Meals: $mealsCompleted | Total Kcal: $totalCalories'),
                         children: mealsForDate.map((meal) {
                           // --- WRAP ListTile with Dismissible for swipe-to-delete ---
                           return Dismissible(
@@ -215,7 +229,10 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
                             },
                             child: ListTile(
                               leading: Icon(_getMealIcon(meal['meal_type'])),
-                              title: Text(meal['meal_name'] ?? 'N/A'),
+                              title: Text(
+                                '${meal['meal_type'] != null ? meal['meal_type'][0].toUpperCase() + meal['meal_type'].substring(1) + ': ' : ''}'
+                                '${meal['meal_name'] ?? 'N/A'}',
+                              ),
                               subtitle: Text('${meal['calories']} kcal'),
                               trailing: Row( // Use a Row to place multiple icons
                                 mainAxisSize: MainAxisSize.min, // Keep row compact

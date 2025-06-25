@@ -190,9 +190,9 @@ class DietPlanSystem:
                 progress_id = f"PRG{int(uuid.uuid4().hex[:8], 16):08d}" # Generate unique progress ID
 
                 c.execute("""
-                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (progress_id, user_id, diet_plan_id, log_date, new_total_calories, datetime.now().isoformat()))
+                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (progress_id, user_id, diet_plan_id, log_date, new_total_calories))
                 print(f"Created new progress entry for {user_id} on {log_date} with {new_total_calories} calories.")
 
             conn.commit()
@@ -1243,20 +1243,27 @@ def setup_diet_plan_routes(app, diet_system):
     def get_logged_meals_route(user_id):
         """Get user's logged meal history, grouped by date"""
         try:
-                # Normalize user_id: handle int or string
+            # Normalize user_id: handle int or string
             if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
                 user_id = f"U{int(user_id):03d}"
 
             conn = diet_system.get_db_connection()
             c = conn.cursor()
 
+            # c.execute("""
+            #     SELECT meal_id, lm.diet_plan_id, meal_type, meal_name, calories, lm.notes, lm.created_at, date(lp.date) AS log_date
+            #     FROM LoggedMeal lm
+            #     LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
+            #     WHERE lm.user_id = ?
+            #     ORDER BY log_date DESC, lm.created_at DESC
+            # """, (user_id,))
+
             c.execute("""
-                SELECT meal_id, lm.diet_plan_id, meal_type, meal_name, calories, lm.notes, lm.created_at, date(lp.date) AS log_date
-                FROM LoggedMeal lm
-                LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
-                WHERE lm.user_id = ?
-                ORDER BY log_date DESC, lm.created_at DESC
-            """, (user_id,))
+            SELECT meal_id, diet_plan_id, meal_type, meal_name, calories, notes, created_at
+            FROM LoggedMeal
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        """, (user_id,))
 
             rows = c.fetchall()
             conn.close()
@@ -1264,19 +1271,36 @@ def setup_diet_plan_routes(app, diet_system):
             # Group by date
             history = {}
             for row in rows:
-                log_date = row['log_date'] or row['created_at'][:10]
-                if log_date not in history:
-                    history[log_date] = []
+                raw_created_at = row['created_at']
+            
+                dt_object = None
+                try:
+                    # Try parsing with milliseconds first
+                    dt_object = datetime.strptime(raw_created_at, '%Y-%m-%d %H:%M:%S.%f')
+                except ValueError:
+                    try:
+                        # If that fails, try parsing without milliseconds
+                        dt_object = datetime.strptime(raw_created_at, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        print(f"ERROR: Could not parse datetime string: {raw_created_at}")
+                        continue # Skip this row if it cannot be parsed
 
-                history[log_date].append({
-                    'meal_id': row['meal_id'],
-                    'diet_plan_id': row['diet_plan_id'],
-                    'meal_type': row['meal_type'],
-                    'meal_name': row['meal_name'],
-                    'calories': row['calories'],
-                    'notes': row['notes'],
-                    'logged_at': row['created_at']
-                })
+                if dt_object: # Only proceed if parsing was successful
+                    # Use the date part of the actual meal creation timestamp for grouping
+                    log_date = dt_object.date().isoformat()
+
+                    if log_date not in history:
+                        history[log_date] = []
+
+                    history[log_date].append({
+                        'meal_id': row['meal_id'],
+                        'diet_plan_id': row['diet_plan_id'],
+                        'meal_type': row['meal_type'],
+                        'meal_name': row['meal_name'],
+                        'calories': row['calories'],
+                        'notes': row['notes'],
+                        'logged_at': raw_created_at
+                    })
 
             return jsonify({
                 'success': True,
@@ -1284,6 +1308,7 @@ def setup_diet_plan_routes(app, diet_system):
             })
 
         except Exception as e:
+            print(f"Error fetching logged meals: {e}")
             return jsonify({'success': False, 'error': f'Failed to fetch logged meals: {str(e)}'}), 500
 
     @app.route('/api/logged-meal/<meal_id>', methods=['DELETE'])
