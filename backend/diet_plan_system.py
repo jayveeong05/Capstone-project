@@ -375,10 +375,120 @@ class DietPlanSystem:
             if progress_data:
                 return {'success': True, 'progress': dict(progress_data)}
             else:
-                return {'success': False, 'message': 'No progress found for this date.'}
+                return {
+                'success': True,
+                'progress': {
+                    'user_id': user_id,
+                    'date': target_date,
+                    'calories_consumed': 0,
+                    'meals_completed': 0,
+                    'weight': None,
+                    'notes': '',
+                    'diet_plan_id': None,
+                    'progress_id': None,
+                    'created_at': None
+                }
+            }
         except sqlite3.Error as e:
             return {'success': False, 'error': f'Database error: {str(e)}'}
         except Exception as e:
+            return {'success': False, 'error': f'An unexpected error occurred: {str(e)}'}
+        finally:
+            conn.close()
+
+    def get_user_diet_summary(self, user_id):
+        """
+        Retrieves a comprehensive summary of the user's active diet plan progress.
+        Includes plan details, overall progress, and last logged meal.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        
+        try:
+            summary = {
+                'active_plan': None,
+                'overall_progress': {
+                    'total_days_completed': 0,
+                    'total_calories_consumed': 0,
+                    'total_planned_calories': 0,
+                    'average_daily_calories_consumed': 0,
+                    'average_daily_calories_planned': 0,
+                    'completion_percentage': 0,
+                    'current_day_of_plan': 0
+                },
+                'last_logged_meal': None
+            }
+
+            # 1. Get Active Diet Plan Details
+            c.execute("""
+                SELECT diet_plan_id, plan_name, start_date, end_date, daily_calories, duration_days
+                FROM DietPlan
+                WHERE user_id = ? AND status = 'Active'
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            active_plan = c.fetchone()
+
+            if active_plan:
+                summary['active_plan'] = dict(active_plan)
+                
+                # Calculate current day of plan
+                start_date_obj = datetime.strptime(active_plan['start_date'], '%Y-%m-%d').date()
+                today = date.today()
+                
+                # Ensure today is not before start_date, if it is, set day 0 or 1
+                if today < start_date_obj:
+                    summary['overall_progress']['current_day_of_plan'] = 0 # Plan hasn't started yet
+                else:
+                    summary['overall_progress']['current_day_of_plan'] = (today - start_date_obj).days + 1
+
+                # 2. Get Overall Progress
+                # Sum calories and count days with progress for the *active plan's duration*
+                c.execute("""
+                    SELECT SUM(calories_consumed) AS total_consumed, 
+                           COUNT(DISTINCT date) AS distinct_days_logged
+                    FROM UserDietPlanProgress
+                    WHERE user_id = ? AND diet_plan_id = ? AND date <= ?
+                """, (user_id, active_plan['diet_plan_id'], today.isoformat()))
+                
+                overall_progress = c.fetchone()
+                
+                if overall_progress:
+                    total_consumed = overall_progress['total_consumed'] if overall_progress['total_consumed'] is not None else 0
+                    distinct_days_logged = overall_progress['distinct_days_logged'] if overall_progress['distinct_days_logged'] is not None else 0
+                    
+                    summary['overall_progress']['total_calories_consumed'] = total_consumed
+                    summary['overall_progress']['total_days_completed'] = distinct_days_logged
+
+                    if distinct_days_logged > 0:
+                        summary['overall_progress']['average_daily_calories_consumed'] = round(total_consumed / distinct_days_logged, 2)
+                    
+                    summary['overall_progress']['average_daily_calories_planned'] = active_plan['daily_calories']
+
+                    # Completion Percentage: Based on days elapsed vs total duration
+                    total_plan_days = active_plan['duration_days']
+                    if total_plan_days > 0:
+                        # Use days elapsed, up to total_plan_days, for percentage
+                        days_elapsed_for_percent = min(summary['overall_progress']['current_day_of_plan'], total_plan_days)
+                        summary['overall_progress']['completion_percentage'] = round((days_elapsed_for_percent / total_plan_days) * 100, 2)
+            
+            # 3. Get Last Logged Meal
+            c.execute("""
+                SELECT meal_id, meal_type, meal_name, calories, notes, created_at
+                FROM LoggedMeal
+                WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            last_meal = c.fetchone()
+            if last_meal:
+                summary['last_logged_meal'] = dict(last_meal)
+
+            return {'success': True, 'summary': summary}
+
+        except sqlite3.Error as e:
+            print(f"Database error fetching diet summary: {e}")
+            return {'success': False, 'error': f'Database error: {str(e)}'}
+        except Exception as e:
+            print(f"An unexpected error occurred fetching diet summary: {e}")
             return {'success': False, 'error': f'An unexpected error occurred: {str(e)}'}
         finally:
             conn.close()
@@ -1431,11 +1541,24 @@ def setup_diet_plan_routes(app, diet_system):
                 return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD.'}), 400
 
             result = diet_system.get_user_progress_for_date(user_id, date)
-            return jsonify(result), 200 if result.get('success') else 404 # Return 404 if no progress found
+            return jsonify(result), 200 if result.get('success') else 500
 
         except Exception as e:
             print(f"Error fetching user progress by date: {e}")
             return jsonify({'success': False, 'error': f'Failed to fetch user progress: {str(e)}'}), 500
+        
+    @app.route('/api/user-diet-summary/<user_id>', methods=['GET'])
+    def get_user_diet_summary_route(user_id):
+        """Get user's diet plan summary."""
+        try:
+            if user_id.isdigit():
+                user_id = f"U{int(user_id):03d}"
+            
+            result = diet_system.get_user_diet_summary(user_id)
+            return jsonify(result), 200 if result.get('success') else 500
+        except Exception as e:
+            print(f"Error fetching diet summary: {e}")
+            return jsonify({'success': False, 'error': f'Failed to fetch diet summary: {str(e)}'}), 500
 
 
 

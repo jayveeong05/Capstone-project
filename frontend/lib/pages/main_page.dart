@@ -46,20 +46,52 @@ class _MainPageState extends State<MainPage> {
     "Muscles loading… please wait. (And hydrate.) 💧⏳",
   ];
 
+  Map<String, dynamic>? _dietSummary;
+  bool _isLoadingDietSummary = true;
+  String? _userId;
+
+//   void _debugSharedPreferences() async {
+//   SharedPreferences prefs = await SharedPreferences.getInstance();
+//   final keys = prefs.getKeys();
+
+//   if (keys.isEmpty) {
+//     print("🔍 SharedPreferences is empty.");
+//     return;
+//   }
+
+//   print("📦 SharedPreferences contents:");
+//   for (String key in keys) {
+//     final value = prefs.get(key);
+//     print("  $key: $value");
+//   }
+// }
+
   @override
   void initState() {
     super.initState();
-    _loadUsername();
+    // _debugSharedPreferences(); // Uncomment to debug SharedPreferences contents
+    _loadUsernameAndUserId();
     _fetchUserPlansWithProgress();
     _triggerDailyReminder();
     _setRandomMotivationalMessage();
   }
   // Function to load the username from SharedPreferences
-  Future<void> _loadUsername() async {
+  Future<void> _loadUsernameAndUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('username') ?? 'User';
+    final userIdInt = prefs.getInt('user_id'); // ✅ Correct key
+
+    final formattedUserId = userIdInt != null ? 'U${userIdInt.toString().padLeft(3, '0')}' : null;
+
     setState(() {
-      _username = prefs.getString('username') ?? 'User'; // Retrieve username or default to 'User'
+      _username = username;
+      _userId = formattedUserId;
     });
+    if (_userId != null) {
+      _fetchDietSummary(); // Fetch diet summary once userId is available
+    } else {
+      print('❌ User ID not found in SharedPreferences');
+    }
   }
 
 void _launchYouTube(String url) async {
@@ -175,6 +207,127 @@ Future<void> _logout() async {
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 }
+
+Future<void> _fetchDietSummary() async {
+  if (_userId == null) {
+    setState(() {
+      _isLoadingDietSummary = false;
+    });
+    return;
+  }
+
+  setState(() {
+    _isLoadingDietSummary = true;
+  });
+
+  try {
+    final response = await http.get(Uri.parse('http://10.0.2.2:5000/api/user-diet-summary/$_userId'));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['success']) {
+        setState(() {
+          _dietSummary = data['summary'];
+        });
+      } else {
+        print('Failed to load diet summary: ${data['error']}');
+      }
+    } else {
+      print('Server error: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Error fetching diet summary: $e');
+  } finally {
+    setState(() {
+      _isLoadingDietSummary = false;
+    });
+  }
+}
+
+  // Helper function to get meal icon
+  IconData _getMealIcon(String? mealType) {
+    switch (mealType?.toLowerCase()) {
+      case 'breakfast':
+        return Icons.breakfast_dining;
+      case 'lunch':
+      return Icons.lunch_dining;
+      case 'dinner':
+      return Icons.dinner_dining;
+      case 'snack':
+      return Icons.cookie;
+      default:
+      return Icons.food_bank;
+    }
+  }
+
+  // Helper widget for section titles
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Helper widget for linear progress indicator
+  Widget _buildProgressIndicator(String label, double value, String displayValue) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        LinearProgressIndicator(
+          value: value, // Value should be between 0.0 and 1.0
+          backgroundColor: Colors.grey[300],
+          color: Theme.of(context).primaryColor,
+          minHeight: 10,
+          borderRadius: BorderRadius.circular(5),
+        ),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            displayValue,
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Helper widget for calorie display
+  Widget _buildCalorieDisplay(String label, String value, Color color) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 15, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
 
   // Helper widget to build a standardized section card
   Widget _buildSectionCard({required Widget child, Color? color, double elevation = 4}) {
@@ -582,6 +735,143 @@ Future<void> _fetchUserPlansWithProgress() async {
                     ],
                   ),
                 ),
+
+              const SizedBox(height: 10),
+              // 1.5. Diet Summary Card
+              if (_isLoadingDietSummary)
+                Column( // Added Column to group title and spinner
+                  children: [
+                    _buildSectionTitle('Your Diet Plan Progress'),
+                    const Center(child: CircularProgressIndicator()),
+                  ],
+                )
+              else if (_dietSummary == null || _dietSummary!['active_plan'] == null)
+                Column( // Added Column to group title and message/button
+                  children: [
+                    _buildSectionTitle('Your Diet Plan Progress'),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            const Text(
+                              'No active diet plan found.',
+                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => DietPlansPage(userId: _userId!)), // Pass userId to DietPlansPage
+                                ).then((_) {
+                                  _fetchDietSummary(); // Refresh after potentially creating a plan
+                                });
+                              },
+                              icon: const Icon(Icons.add_chart),
+                              label: const Text('Create a Diet Plan'),
+                              style: ElevatedButton.styleFrom(
+                                foregroundColor: Colors.white, backgroundColor: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Builder( // Use Builder to access context within this conditional part
+                  builder: (context) {
+                    final activePlan = _dietSummary!['active_plan'];
+                    final progress = _dietSummary!['overall_progress'];
+                    final lastMeal = _dietSummary!['last_logged_meal'];
+                    
+                    return Column( // Added Column to group title and card
+                      children: [
+                        _buildSectionTitle('Your Diet Plan Progress'),
+                        Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Current Plan: ${activePlan['plan_name']}',
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Days: Day ${progress['current_day_of_plan']} of ${activePlan['duration_days']}',
+                                  style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                                ),
+                                const SizedBox(height: 10),
+
+                                // Completion Percentage
+                                _buildProgressIndicator(
+                                  'Plan Completion',
+                                  progress['completion_percentage'] / 100, // Convert percentage to 0.0-1.0
+                                  '${progress['completion_percentage']}%',
+                                ),
+                                const SizedBox(height: 15),
+
+                                // Calorie Comparison
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _buildCalorieDisplay(
+                                      'Consumed (Avg)',
+                                      '${progress['average_daily_calories_consumed'].toInt()} Kcal',
+                                      Colors.orange,
+                                    ),
+                                    _buildCalorieDisplay(
+                                      'Planned Daily',
+                                      '${activePlan['daily_calories'].toInt()} Kcal',
+                                      Colors.green,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 15),
+
+                                // Last Logged Meal
+                                if (lastMeal != null)
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Last Logged Meal:',
+                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 5),
+                                      ListTile(
+                                        leading: Icon(_getMealIcon(lastMeal['meal_type']), color: Theme.of(context).primaryColor),
+                                        title: Text(lastMeal['meal_name']),
+                                        subtitle: Text(
+                                          '${lastMeal['calories'].toInt()} Kcal (${lastMeal['meal_type']})\n'
+                                          'Logged: ${DateFormat('h:mm a, MMM d').format(DateTime.parse(lastMeal['created_at']))}',
+                                        ),
+                                        isThreeLine: true,
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  const Text(
+                                    'No meals logged yet.',
+                                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                ),
+
               // 2. Quick Actions Section
               const Text(
                 'Quick Actions',
