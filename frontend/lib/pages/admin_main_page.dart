@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'admin_send_notification.dart';
 import 'admin_respond.dart';
 import 'work_analytics_page.dart';
+import 'recipe_library_management_page.dart'; 
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -475,7 +476,13 @@ Future<void> _toggleSystemStatus(bool disable) async {
                 MaterialPageRoute(builder: (context) => FitnessPageManagementPage()),
               ),
             },
-            {'name': 'Recipe Library Management', 'onTap': () => _showFeatureComingSoon('Recipe Library Management')},
+            {
+              'name': 'Recipe Library Management', 
+              'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const RecipeLibraryManagementPage()),
+              )
+            },
           ]),
 
           const SizedBox(height: 24),

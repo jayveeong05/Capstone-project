@@ -182,18 +182,6 @@ def generate_goal_id():
     else:
         return 'G001'
 
-def generate_diet_pref_id():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT diet_pref_id FROM UserDietPreference ORDER BY diet_pref_id DESC LIMIT 1")
-    last_id_row = c.fetchone()
-    conn.close()
-    if last_id_row:
-        last_id = last_id_row['diet_pref_id']
-        numeric_part = int(last_id[3:]) + 1
-        return f'UDP{numeric_part:03d}'
-    else:
-        return 'UDP001'
 
 def generate_feedback_id():
     conn = get_db_connection()

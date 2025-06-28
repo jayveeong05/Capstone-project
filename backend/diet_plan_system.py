@@ -121,6 +121,128 @@ class DietPlanSystem:
             return f"LM{uuid.uuid4().hex[:8]}"
         finally:
             conn.close()
+
+    def generate_ingredient_id(self):
+        """Generate a unique and sequential ingredient ID (e.g., ING001)."""
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT ingredient_id FROM Ingredient ORDER BY ingredient_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            if last_id_row:
+                last_id = last_id_row['ingredient_id']
+                numeric_part = int(re.search(r'\d+', last_id).group()) + 1
+                return f'ING{numeric_part:03d}'
+            else:
+                return 'ING001'
+        finally:
+            conn.close()
+    
+    def generate_recipe_id(self):
+        """Generate a unique and sequential recipe ID (e.g., RCP001)."""
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT recipe_id FROM RecipeLibrary ORDER BY recipe_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            if last_id_row:
+                last_id = last_id_row['recipe_id']
+                numeric_part = int(re.search(r'\d+', last_id).group()) + 1
+                return f'RCP{numeric_part:03d}'
+            else:
+                return 'RCP001'
+        finally:
+            conn.close()
+
+    def get_all_ingredients(self):
+        conn = self.get_db_connection()
+        ingredients = conn.execute('SELECT * FROM Ingredient ORDER BY name').fetchall()
+        conn.close()
+        return [dict(row) for row in ingredients]
+    
+    def create_ingredient(self, data):
+        conn = self.get_db_connection()
+        new_id = self.generate_ingredient_id()
+        try:
+            conn.execute('''
+                INSERT INTO Ingredient (ingredient_id, name, category, nutritional_value, allergen_info)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (new_id, data['name'], data.get('category'), data.get('nutritional_value'), data.get('allergen_info')))
+            conn.commit()
+            return {'success': True, 'ingredient_id': new_id}
+        except sqlite3.IntegrityError:
+             return {'success': False, 'error': 'Ingredient with this name may already exist.'}
+        finally:
+            conn.close()
+
+    def update_ingredient(self, ingredient_id, data):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('''
+                UPDATE Ingredient 
+                SET name = ?, category = ?, nutritional_value = ?, allergen_info = ?
+                WHERE ingredient_id = ?
+            ''', (data['name'], data.get('category'), data.get('nutritional_value'), data.get('allergen_info'), ingredient_id))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+
+    def delete_ingredient(self, ingredient_id):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('DELETE FROM Ingredient WHERE ingredient_id = ?', (ingredient_id,))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+
+    def get_all_recipes(self):
+        conn = self.get_db_connection()
+        recipes = conn.execute('SELECT * FROM RecipeLibrary ORDER BY title').fetchall()
+        conn.close()
+        return [dict(row) for row in recipes]
+    
+    def create_recipe(self, data):
+        conn = self.get_db_connection()
+        new_id = self.generate_recipe_id()
+        try:
+            conn.execute('''
+                INSERT INTO RecipeLibrary (recipe_id, title, description, ingredients, instructions, nutrition_info, image_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                new_id, data['title'], data.get('description'), data.get('ingredients'),
+                data.get('instructions'), data.get('nutrition_info'), data.get('image_url')
+            ))
+            conn.commit()
+            return {'success': True, 'recipe_id': new_id}
+        finally:
+            conn.close()
+
+    def update_recipe(self, recipe_id, data):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('''
+                UPDATE RecipeLibrary
+                SET title = ?, description = ?, ingredients = ?, instructions = ?, nutrition_info = ?, image_url = ?
+                WHERE recipe_id = ?
+            ''', (
+                data['title'], data.get('description'), data.get('ingredients'),
+                data.get('instructions'), data.get('nutrition_info'), data.get('image_url'), recipe_id
+            ))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+            
+    def delete_recipe(self, recipe_id):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('DELETE FROM RecipeLibrary WHERE recipe_id = ?', (recipe_id,))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
         
     def log_user_meal(self, data):
         """Logs a user's meal and syncs it with their daily progress"""
@@ -860,7 +982,7 @@ class DietPlanSystem:
         # Create Ingredient table
         c.execute('''CREATE TABLE IF NOT EXISTS Ingredient (
                     ingredient_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
+                    name TEXT NOT NULL UNIQUE,
                     category TEXT,
                     nutritional_value TEXT,
                     allergen_info TEXT)''')
@@ -891,6 +1013,8 @@ class DietPlanSystem:
         c.execute('CREATE INDEX IF NOT EXISTS idx_progress_user_date ON UserDietPlanProgress(user_id, date)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_progress_diet_plan ON UserDietPlanProgress(diet_plan_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_diet_pref_user ON UserDietPreference(user_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_recipe_title ON RecipeLibrary(title)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_logged_meal_user ON LoggedMeal(user_id)')
         
         conn.commit()
         conn.close()
@@ -901,6 +1025,46 @@ class DietPlanSystem:
 def setup_diet_plan_routes(app, diet_system):
     """Setup all diet plan routes with the Flask app"""
     
+    @app.route('/api/admin/ingredients', methods=['GET', 'POST'])
+    def admin_ingredients():
+        if request.method == 'GET':
+            ingredients = diet_system.get_all_ingredients()
+            return jsonify(ingredients)
+        elif request.method == 'POST':
+            data = request.json
+            result = diet_system.create_ingredient(data)
+            return jsonify(result), 201 if result['success'] else 400
+
+    @app.route('/api/admin/ingredients/<ingredient_id>', methods=['PUT', 'DELETE'])
+    def admin_ingredient_detail(ingredient_id):
+        if request.method == 'PUT':
+            data = request.json
+            result = diet_system.update_ingredient(ingredient_id, data)
+            return jsonify(result)
+        elif request.method == 'DELETE':
+            result = diet_system.delete_ingredient(ingredient_id)
+            return jsonify(result)
+
+    @app.route('/api/admin/recipes', methods=['GET', 'POST'])
+    def admin_recipes():
+        if request.method == 'GET':
+            recipes = diet_system.get_all_recipes()
+            return jsonify(recipes)
+        elif request.method == 'POST':
+            data = request.json
+            result = diet_system.create_recipe(data)
+            return jsonify(result), 201 if result['success'] else 400
+
+    @app.route('/api/admin/recipes/<recipe_id>', methods=['PUT', 'DELETE'])
+    def admin_recipe_detail(recipe_id):
+        if request.method == 'PUT':
+            data = request.json
+            result = diet_system.update_recipe(recipe_id, data)
+            return jsonify(result)
+        elif request.method == 'DELETE':
+            result = diet_system.delete_recipe(recipe_id)
+            return jsonify(result)
+
     @app.route('/api/generate-diet-plan', methods=['POST'])
     def generate_diet_plan_route():
         """Generate a personalized diet plan for a user"""
