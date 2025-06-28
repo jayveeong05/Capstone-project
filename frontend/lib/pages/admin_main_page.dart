@@ -11,6 +11,7 @@ import 'admin_send_notification.dart';
 import 'admin_respond.dart';
 import 'work_analytics_page.dart';
 import 'recipe_library_management_page.dart'; 
+import 'dietary_analytics_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -521,7 +522,10 @@ Future<void> _toggleSystemStatus(bool disable) async {
                 context,
                 MaterialPageRoute(builder: (context) => GlobalDashboard()),
               ),},
-            {'name': 'User Dietary Habit Data Analytics', 'onTap': () => _showFeatureComingSoon('User Dietary Habit Data Analytics')},
+            {'name': 'User Dietary Habit Data Analytics', 'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const DietaryAnalyticsScreen()),
+              ),},
             {'name': 'Report Generation', 'onTap': () => _showFeatureComingSoon('Report Generation')},
           ]),
         ],

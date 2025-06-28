@@ -10,7 +10,7 @@ import uuid
 import re
 import random
 from datetime import datetime, date, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 from flask import request, jsonify
 
 # Import the database connection function from your main application
@@ -634,6 +634,177 @@ class DietPlanSystem:
         if result:
             return dict(result)
         return None
+    
+    def get_dietary_habit_analytics(self, period_days=30):
+        """
+        Retrieves aggregated dietary habit data for analytics for the admin dashboard.
+        Args:
+            period_days (int): The number of past days to consider for analytics.
+        Returns:
+            dict: A dictionary containing aggregated dietary habit data.
+        """
+        conn = self.get_db_connection()
+        conn.row_factory = sqlite3.Row # Ensure dictionary-like access to rows
+        cursor = conn.cursor()
+
+        analytics_data = {
+            "total_users": 0,
+            "users_with_diet_plans": 0,
+            "average_daily_calories_per_user": {},
+            "meal_type_distribution": {},
+            "top_logged_meals": [],
+            "dietary_goal_distribution": {},
+            "allergy_distribution": {},
+            "top_scanned_foods": [],
+            "average_bmi_by_dietary_goal": {},
+            "calorie_adherence_over_time": []
+        }
+
+        try:
+            # 1. Total Users
+            cursor.execute("SELECT COUNT(user_id) AS total_users FROM User")
+            analytics_data["total_users"] = cursor.fetchone()["total_users"]
+
+            # 2. Users with Diet Plans
+            cursor.execute("SELECT COUNT(DISTINCT user_id) AS users_with_plans FROM DietPlan")
+            analytics_data["users_with_diet_plans"] = cursor.fetchone()["users_with_plans"]
+
+            # Calculate date range for recent data
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=period_days)
+            start_date_str = start_date.strftime('%Y-%m-%d')
+            end_date_str = end_date.strftime('%Y-%m-%d')
+
+
+            # 3. Average Daily Calories Per User & Calorie Adherence Over Time
+            cursor.execute("""
+                SELECT
+                    dpp.user_id,
+                    p.full_name,
+                    SUM(dpp.calories_consumed) AS total_calories,
+                    COUNT(DISTINCT dpp.date) AS total_days_logged
+                FROM UserDietPlanProgress dpp
+                JOIN User u ON dpp.user_id = u.user_id
+                LEFT JOIN Profile p ON u.user_id = p.user_id
+                WHERE dpp.date BETWEEN ? AND ?
+                GROUP BY dpp.user_id
+            """, (start_date_str, end_date_str))
+
+            user_calorie_data = cursor.fetchall()
+            for row in user_calorie_data:
+                user_id = row["user_id"]
+                full_name = row["full_name"] if row["full_name"] else user_id # Use full_name if available
+                total_calories = row["total_calories"]
+                total_days_logged = row["total_days_logged"]
+                if total_days_logged > 0:
+                    avg_daily_calories = total_calories / total_days_logged
+                    analytics_data["average_daily_calories_per_user"][full_name] = round(avg_daily_calories, 2)
+
+            # Calorie adherence over time (aggregate daily averages)
+            cursor.execute("""
+                SELECT
+                    date,
+                    AVG(calories_consumed) AS average_calories,
+                    AVG(meals_completed) AS average_meals_completed
+                FROM UserDietPlanProgress
+                WHERE date BETWEEN ? AND ?
+                GROUP BY date
+                ORDER BY date
+            """, (start_date_str, end_date_str))
+            analytics_data["calorie_adherence_over_time"] = [dict(row) for row in cursor.fetchall()]
+
+
+            # 4. Meal Type Distribution & Top Logged Meals
+            cursor.execute("""
+                SELECT meal_type, COUNT(*) AS count
+                FROM LoggedMeal
+                WHERE created_at BETWEEN ? AND ?
+                GROUP BY meal_type
+                ORDER BY count DESC
+            """, (start_date_str + ' 00:00:00', end_date_str + ' 23:59:59'))
+            meal_type_counts = cursor.fetchall()
+            total_logged_meals_count = sum(row["count"] for row in meal_type_counts)
+            for row in meal_type_counts:
+                analytics_data["meal_type_distribution"][row["meal_type"]] = {
+                    "count": row["count"],
+                    "percentage": round((row["count"] / total_logged_meals_count) * 100, 2) if total_logged_meals_count > 0 else 0
+                }
+
+            cursor.execute("""
+                SELECT meal_name, COUNT(*) AS count
+                FROM LoggedMeal
+                WHERE created_at BETWEEN ? AND ?
+                GROUP BY meal_name
+                ORDER BY count DESC
+                LIMIT 10
+            """, (start_date_str + ' 00:00:00', end_date_str + ' 23:59:59'))
+            analytics_data["top_logged_meals"] = [dict(row) for row in cursor.fetchall()]
+
+
+            # 5. Dietary Goal Distribution
+            cursor.execute("""
+                SELECT dietary_goal, COUNT(*) AS count
+                FROM UserDietPreference
+                GROUP BY dietary_goal
+                ORDER BY count DESC
+            """)
+            goal_counts = cursor.fetchall()
+            total_goals = sum(row["count"] for row in goal_counts)
+            for row in goal_counts:
+                analytics_data["dietary_goal_distribution"][row["dietary_goal"]] = {
+                    "count": row["count"],
+                    "percentage": round((row["count"] / total_goals) * 100, 2) if total_goals > 0 else 0
+                }
+
+            # 6. Allergy Distribution
+            cursor.execute("""
+                SELECT allergies FROM UserDietPreference WHERE allergies IS NOT NULL AND allergies != ''
+            """)
+            all_allergies = []
+            for row in cursor.fetchall():
+                # Assuming allergies are stored as comma-separated string
+                allergies_list = [a.strip() for a in row["allergies"].split(',') if a.strip()]
+                all_allergies.extend(allergies_list)
+
+            allergy_counts = Counter(all_allergies)
+            analytics_data["allergy_distribution"] = dict(allergy_counts)
+
+
+            # 7. Top Scanned Foods
+            cursor.execute("""
+                SELECT food_name, COUNT(*) AS count
+                FROM MealScans
+                WHERE timestamp BETWEEN ? AND ?
+                GROUP BY food_name
+                ORDER BY count DESC
+                LIMIT 10
+            """, (start_date_str + ' 00:00:00', end_date_str + ' 23:59:59'))
+            analytics_data["top_scanned_foods"] = [dict(row) for row in cursor.fetchall()]
+
+            # 8. Average BMI by Dietary Goal
+            cursor.execute("""
+                SELECT
+                    udp.dietary_goal,
+                    AVG(p.bmi) AS average_bmi,
+                    COUNT(DISTINCT u.user_id) as user_count
+                FROM UserDietPreference udp
+                JOIN User u ON udp.user_id = u.user_id
+                JOIN Profile p ON u.user_id = p.user_id
+                WHERE p.bmi IS NOT NULL AND p.bmi > 0
+                GROUP BY udp.dietary_goal
+            """)
+            for row in cursor.fetchall():
+                analytics_data["average_bmi_by_dietary_goal"][row["dietary_goal"]] = {
+                    "average_bmi": round(row["average_bmi"], 2),
+                    "user_count": row["user_count"]
+                }
+        except Exception as e:
+            print(f"Error fetching dietary habit analytics: {e}")
+            # Optionally, return an error state or partial data
+            return {'error': str(e)}
+        finally:
+            conn.close()
+        return analytics_data
     
     def load_allergen_map(self):
         conn = self.get_db_connection()
@@ -1724,7 +1895,21 @@ def setup_diet_plan_routes(app, diet_system):
             print(f"Error fetching diet summary: {e}")
             return jsonify({'success': False, 'error': f'Failed to fetch diet summary: {str(e)}'}), 500
 
-
+    @app.route('/api/admin/dietary-analytics', methods=['GET'])
+    def get_admin_dietary_analytics_route():
+        """
+        Admin endpoint to get aggregated dietary habit analytics.
+        Optional query parameter 'period_days' to specify the duration for analytics.
+        """
+        try:
+            period_days = request.args.get('period_days', type=int, default=30)
+            result = diet_system.get_dietary_habit_analytics(period_days)
+            if "error" in result:
+                return jsonify({'success': False, 'error': result['error']}), 500
+            return jsonify({'success': True, 'data': result}), 200
+        except Exception as e:
+            print(f"Error fetching admin dietary analytics: {e}")
+            return jsonify({'success': False, 'error': f'Failed to fetch dietary analytics: {str(e)}'}), 500
 
 # Integration helper function
 def integrate_diet_system_with_app(app, get_db_connection_func):
