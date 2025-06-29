@@ -10,7 +10,7 @@ import uuid
 import re
 import random
 from datetime import datetime, date, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 from flask import request, jsonify
 
 # Import the database connection function from your main application
@@ -67,6 +67,183 @@ class DietPlanSystem:
         else:
             return 'DP001'
         
+    def generate_progress_id(self):
+        """
+        Generate a unique and sequential progress ID (e.g., PRG001, PRG002).
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT progress_id FROM UserDietPlanProgress ORDER BY progress_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            
+            if last_id_row:
+                last_id = last_id_row['progress_id']
+                # Extract numeric part, convert to int, increment
+                numeric_part = int(last_id[3:]) + 1
+            else:
+                # If no existing progress IDs, start from 1
+                numeric_part = 1
+            
+            # Format to PRG001, PRG002 etc.
+            return f'PRG{numeric_part:03d}'
+        except Exception as e:
+            print(f"Error generating progress ID: {e}")
+            # Fallback or re-raise, depending on desired error handling
+            # For now, let's just use a UUID as a fallback to prevent blocking
+            return f"PRG{int(uuid.uuid4().hex[:8], 16):08d}" 
+        finally:
+            conn.close()
+
+    def generate_logged_meal_id(self):
+        """
+        Generate a unique and sequential logged meal ID (e.g., LM001, LM002).
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT meal_id FROM LoggedMeal ORDER BY meal_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            
+            if last_id_row:
+                last_id = last_id_row['meal_id']
+                # Extract numeric part, convert to int, increment
+                numeric_part = int(last_id[2:]) + 1
+            else:
+                # If no existing meal IDs, start from 1
+                numeric_part = 1
+            
+            # Format to LM001, LM002 etc.
+            return f'LM{numeric_part:03d}'
+        except Exception as e:
+            print(f"Error generating logged meal ID: {e}")
+            # Fallback or re-raise. Using UUID as fallback to prevent blocking
+            return f"LM{uuid.uuid4().hex[:8]}"
+        finally:
+            conn.close()
+
+    def generate_ingredient_id(self):
+        """Generate a unique and sequential ingredient ID (e.g., ING001)."""
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT ingredient_id FROM Ingredient ORDER BY ingredient_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            if last_id_row:
+                last_id = last_id_row['ingredient_id']
+                numeric_part = int(re.search(r'\d+', last_id).group()) + 1
+                return f'ING{numeric_part:03d}'
+            else:
+                return 'ING001'
+        finally:
+            conn.close()
+    
+    def generate_recipe_id(self):
+        """Generate a unique and sequential recipe ID (e.g., RCP001)."""
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("SELECT recipe_id FROM RecipeLibrary ORDER BY recipe_id DESC LIMIT 1")
+            last_id_row = c.fetchone()
+            if last_id_row:
+                last_id = last_id_row['recipe_id']
+                numeric_part = int(re.search(r'\d+', last_id).group()) + 1
+                return f'RCP{numeric_part:03d}'
+            else:
+                return 'RCP001'
+        finally:
+            conn.close()
+
+    def get_all_ingredients(self):
+        conn = self.get_db_connection()
+        ingredients = conn.execute('SELECT * FROM Ingredient ORDER BY name').fetchall()
+        conn.close()
+        return [dict(row) for row in ingredients]
+    
+    def create_ingredient(self, data):
+        conn = self.get_db_connection()
+        new_id = self.generate_ingredient_id()
+        try:
+            conn.execute('''
+                INSERT INTO Ingredient (ingredient_id, name, category, nutritional_value, allergen_info)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (new_id, data['name'], data.get('category'), data.get('nutritional_value'), data.get('allergen_info')))
+            conn.commit()
+            return {'success': True, 'ingredient_id': new_id}
+        except sqlite3.IntegrityError:
+             return {'success': False, 'error': 'Ingredient with this name may already exist.'}
+        finally:
+            conn.close()
+
+    def update_ingredient(self, ingredient_id, data):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('''
+                UPDATE Ingredient 
+                SET name = ?, category = ?, nutritional_value = ?, allergen_info = ?
+                WHERE ingredient_id = ?
+            ''', (data['name'], data.get('category'), data.get('nutritional_value'), data.get('allergen_info'), ingredient_id))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+
+    def delete_ingredient(self, ingredient_id):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('DELETE FROM Ingredient WHERE ingredient_id = ?', (ingredient_id,))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+
+    def get_all_recipes(self):
+        conn = self.get_db_connection()
+        recipes = conn.execute('SELECT * FROM RecipeLibrary ORDER BY title').fetchall()
+        conn.close()
+        return [dict(row) for row in recipes]
+    
+    def create_recipe(self, data):
+        conn = self.get_db_connection()
+        new_id = self.generate_recipe_id()
+        try:
+            conn.execute('''
+                INSERT INTO RecipeLibrary (recipe_id, title, description, ingredients, instructions, nutrition_info, image_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                new_id, data['title'], data.get('description'), data.get('ingredients'),
+                data.get('instructions'), data.get('nutrition_info'), data.get('image_url')
+            ))
+            conn.commit()
+            return {'success': True, 'recipe_id': new_id}
+        finally:
+            conn.close()
+
+    def update_recipe(self, recipe_id, data):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('''
+                UPDATE RecipeLibrary
+                SET title = ?, description = ?, ingredients = ?, instructions = ?, nutrition_info = ?, image_url = ?
+                WHERE recipe_id = ?
+            ''', (
+                data['title'], data.get('description'), data.get('ingredients'),
+                data.get('instructions'), data.get('nutrition_info'), data.get('image_url'), recipe_id
+            ))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+            
+    def delete_recipe(self, recipe_id):
+        conn = self.get_db_connection()
+        try:
+            conn.execute('DELETE FROM RecipeLibrary WHERE recipe_id = ?', (recipe_id,))
+            conn.commit()
+            return {'success': True}
+        finally:
+            conn.close()
+        
     def log_user_meal(self, data):
         """Logs a user's meal and syncs it with their daily progress"""
         try:
@@ -76,7 +253,7 @@ class DietPlanSystem:
             meal_name = data['meal_name']
             calories = float(data['calories'])
             notes = data.get('notes', '')
-            log_date = date.today()
+            log_date = date.today().isoformat()  # Use today's date for logging
 
             if user_id.isdigit():
                 user_id = f"U{int(user_id):03d}"
@@ -84,9 +261,21 @@ class DietPlanSystem:
             conn = self.get_db_connection()
             c = conn.cursor()
 
-            # Ensure there's a progress row for today
+            # Determine diet_plan_id ---
+            diet_plan_id = data.get('diet_plan_id') # Try to get from the request first
+            if not diet_plan_id:
+                # If not provided by frontend, fetch the user's latest (active) diet plan
+                c.execute("SELECT diet_plan_id FROM DietPlan WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
+                latest_diet_plan = c.fetchone()
+                if latest_diet_plan:
+                    diet_plan_id = latest_diet_plan['diet_plan_id']
+                else:
+                    # If no diet plan is found, return an error as it's a NOT NULL constraint
+                    return {'success': False, 'error': 'No active diet plan found for this user. Please create a diet plan first.'}
+
+            # Ensure there's a progress row for today for the given user and diet_plan
             c.execute("""
-                SELECT * FROM UserDietPlanProgress
+                SELECT progress_id, calories_consumed, meals_completed FROM UserDietPlanProgress
                 WHERE user_id = ? AND diet_plan_id = ? AND date = ?
             """, (user_id, diet_plan_id, log_date))
 
@@ -103,14 +292,14 @@ class DietPlanSystem:
                     WHERE progress_id = ?
                 """, (new_calories, new_meals, progress_id))
             else:
-                progress_id = f"PG{uuid.uuid4().hex[:8]}"
+                progress_id = self.generate_progress_id()
                 c.execute("""
                     INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, meals_completed)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (progress_id, user_id, diet_plan_id, log_date, calories, 1))
 
             # Log the meal
-            meal_id = f"LM{uuid.uuid4().hex[:8]}"
+            meal_id = self.generate_logged_meal_id()
             c.execute("""
                 INSERT INTO LoggedMeal (meal_id, user_id, diet_plan_id, progress_id, meal_type, meal_name, calories, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -127,8 +316,304 @@ class DietPlanSystem:
             }
 
         except Exception as e:
+            conn.rollback() # Important: Rollback on error
+            print(f"Error logging meal: {e}") # Print error for debugging
             return {'success': False, 'error': str(e)}
+        
+    def _update_daily_progress(self, user_id, log_date):
+        """
+        Recalculates total calories for a given user and date,
+        and updates UserDietPlanProgress.
+        log_date should be in 'YYYY-MM-DD' format.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
 
+        try:
+            # Calculate total calories from all meals logged for this user on this date
+            c.execute("""
+                SELECT SUM(calories) AS total_calories, COUNT(meal_id) AS total_meals
+                FROM LoggedMeal
+                WHERE user_id = ? AND date(created_at) = ?
+            """, (user_id, log_date))
+            
+            result = c.fetchone()
+            new_total_calories = result['total_calories'] if result and result['total_calories'] is not None else 0
+            new_total_meals = result['total_meals'] if result and result['total_meals'] is not None else 0
+
+            # Get or create progress entry for the date
+            c.execute("SELECT progress_id FROM UserDietPlanProgress WHERE user_id = ? AND date = ?",
+                      (user_id, log_date))
+            progress_entry = c.fetchone()
+
+            if progress_entry:
+                # Update existing progress entry
+                c.execute("""
+                    UPDATE UserDietPlanProgress
+                    SET calories_consumed = ?, meals_completed = ?
+                    WHERE progress_id = ?
+                """, (new_total_calories, new_total_meals, progress_entry['progress_id']))
+                print(f"Updated progress for {user_id} on {log_date} to {new_total_calories} calories.")
+            else:
+                # This should ideally not happen if meals are logged correctly,
+                # but handle if a meal is added to a day without a progress record.
+                # Find an existing diet plan for the user or default
+                c.execute("SELECT diet_plan_id FROM DietPlan WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
+                diet_plan_id_row = c.fetchone()
+                
+                if not diet_plan_id_row:
+                    raise Exception("No active diet plan found for user. Cannot update progress.")
+                
+                diet_plan_id = diet_plan_id_row['diet_plan_id']
+                progress_id = self.generate_progress_id()
+
+                c.execute("""
+                    INSERT INTO UserDietPlanProgress (progress_id, user_id, diet_plan_id, date, calories_consumed, meals_completed)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (progress_id, user_id, diet_plan_id, log_date, new_total_calories, new_total_meals))
+                print(f"Created new progress entry for {user_id} on {log_date} with {new_total_calories} calories and {new_total_meals} meals.")
+
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f"Error updating daily progress for {user_id} on {log_date}: {e}")
+            raise # Re-raise the exception to be caught by the route handler
+        finally:
+            conn.close()
+
+    def delete_logged_meal(self, meal_id):
+        """
+        Deletes a logged meal entry and updates daily progress.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            # Get meal details before deleting to update progress
+            c.execute("SELECT user_id, date(created_at) AS log_date FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
+            meal_info = c.fetchone()
+
+            if not meal_info:
+                return {'success': False, 'error': 'Meal not found.'}
+
+            user_id = meal_info['user_id']
+            log_date = meal_info['log_date']
+
+            c.execute("DELETE FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
+            conn.commit()
+
+            # Now, update the user's daily progress for that date
+            self._update_daily_progress(user_id, log_date)
+
+            return {'success': True, 'message': 'Meal deleted successfully.'}
+        except Exception as e:
+            conn.rollback()
+            print(f"Error deleting meal {meal_id}: {e}")
+            return {'success': False, 'error': f'Failed to delete meal: {str(e)}'}
+        finally:
+            conn.close()
+
+    def update_logged_meal(self, meal_id, updated_data):
+        """
+        Updates an existing logged meal entry and recalculates daily progress.
+        updated_data can contain meal_type, meal_name, calories, notes.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            # Get original meal info to determine if date changed (unlikely with this UI but good to get)
+            # and to get user_id and old_calories for progress update context
+            c.execute("SELECT user_id, calories, date(created_at) AS log_date FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
+            original_meal_info = c.fetchone()
+
+            if not original_meal_info:
+                return {'success': False, 'error': 'Meal not found.'}
+
+            user_id = original_meal_info['user_id']
+            original_log_date = original_meal_info['log_date']
+
+            # Build update query dynamically
+            set_clauses = []
+            values = []
+            
+            if 'meal_type' in updated_data:
+                set_clauses.append("meal_type = ?")
+                values.append(updated_data['meal_type'])
+            if 'meal_name' in updated_data:
+                set_clauses.append("meal_name = ?")
+                values.append(updated_data['meal_name'])
+            if 'calories' in updated_data:
+                set_clauses.append("calories = ?")
+                values.append(updated_data['calories'])
+            if 'notes' in updated_data:
+                set_clauses.append("notes = ?")
+                values.append(updated_data['notes'])
+            
+            if not set_clauses:
+                return {'success': False, 'error': 'No fields to update provided.'}
+
+            query = f"UPDATE LoggedMeal SET {', '.join(set_clauses)} WHERE meal_id = ?"
+            values.append(meal_id)
+
+            c.execute(query, tuple(values))
+            conn.commit()
+
+            # Recalculate and update the user's daily progress for the original date
+            self._update_daily_progress(user_id, original_log_date)
+
+            return {'success': True, 'message': 'Meal updated successfully.'}
+        except Exception as e:
+            conn.rollback()
+            print(f"Error updating meal {meal_id}: {e}")
+            return {'success': False, 'error': f'Failed to update meal: {str(e)}'}
+        finally:
+            conn.close()
+
+    def get_user_progress_for_date(self, user_id, target_date):
+        """
+        Retrieves a user's diet plan progress for a specific date.
+        target_date should be in 'YYYY-MM-DD' format.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                SELECT
+                    progress_id,
+                    user_id,
+                    diet_plan_id,
+                    date,
+                    calories_consumed,
+                    meals_completed,
+                    weight,
+                    notes,
+                    created_at
+                FROM UserDietPlanProgress
+                WHERE user_id = ? AND date = ?
+            """, (user_id, target_date))
+            
+            progress_data = c.fetchone()
+            
+            if progress_data:
+                return {'success': True, 'progress': dict(progress_data)}
+            else:
+                return {
+                'success': True,
+                'progress': {
+                    'user_id': user_id,
+                    'date': target_date,
+                    'calories_consumed': 0,
+                    'meals_completed': 0,
+                    'weight': None,
+                    'notes': '',
+                    'diet_plan_id': None,
+                    'progress_id': None,
+                    'created_at': None
+                }
+            }
+        except sqlite3.Error as e:
+            return {'success': False, 'error': f'Database error: {str(e)}'}
+        except Exception as e:
+            return {'success': False, 'error': f'An unexpected error occurred: {str(e)}'}
+        finally:
+            conn.close()
+
+    def get_user_diet_summary(self, user_id):
+        """
+        Retrieves a comprehensive summary of the user's active diet plan progress.
+        Includes plan details, overall progress, and last logged meal.
+        """
+        conn = self.get_db_connection()
+        c = conn.cursor()
+        
+        try:
+            summary = {
+                'active_plan': None,
+                'overall_progress': {
+                    'total_days_completed': 0,
+                    'total_calories_consumed': 0,
+                    'total_planned_calories': 0,
+                    'average_daily_calories_consumed': 0,
+                    'average_daily_calories_planned': 0,
+                    'completion_percentage': 0,
+                    'current_day_of_plan': 0
+                },
+                'last_logged_meal': None
+            }
+
+            # 1. Get Active Diet Plan Details
+            c.execute("""
+                SELECT diet_plan_id, plan_name, start_date, end_date, daily_calories, duration_days
+                FROM DietPlan
+                WHERE user_id = ? AND status = 'Active'
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            active_plan = c.fetchone()
+
+            if active_plan:
+                summary['active_plan'] = dict(active_plan)
+                
+                # Calculate current day of plan
+                start_date_obj = datetime.strptime(active_plan['start_date'], '%Y-%m-%d').date()
+                today = date.today()
+                
+                # Ensure today is not before start_date, if it is, set day 0 or 1
+                if today < start_date_obj:
+                    summary['overall_progress']['current_day_of_plan'] = 0 # Plan hasn't started yet
+                else:
+                    summary['overall_progress']['current_day_of_plan'] = (today - start_date_obj).days + 1
+
+                # 2. Get Overall Progress
+                # Sum calories and count days with progress for the *active plan's duration*
+                c.execute("""
+                    SELECT SUM(calories_consumed) AS total_consumed, 
+                           COUNT(DISTINCT date) AS distinct_days_logged
+                    FROM UserDietPlanProgress
+                    WHERE user_id = ? AND diet_plan_id = ? AND date <= ?
+                """, (user_id, active_plan['diet_plan_id'], today.isoformat()))
+                
+                overall_progress = c.fetchone()
+                
+                if overall_progress:
+                    total_consumed = overall_progress['total_consumed'] if overall_progress['total_consumed'] is not None else 0
+                    distinct_days_logged = overall_progress['distinct_days_logged'] if overall_progress['distinct_days_logged'] is not None else 0
+                    
+                    summary['overall_progress']['total_calories_consumed'] = total_consumed
+                    summary['overall_progress']['total_days_completed'] = distinct_days_logged
+
+                    if distinct_days_logged > 0:
+                        summary['overall_progress']['average_daily_calories_consumed'] = round(total_consumed / distinct_days_logged, 2)
+                    
+                    summary['overall_progress']['average_daily_calories_planned'] = active_plan['daily_calories']
+
+                    # Completion Percentage: Based on days elapsed vs total duration
+                    total_plan_days = active_plan['duration_days']
+                    if total_plan_days > 0:
+                        # Use days elapsed, up to total_plan_days, for percentage
+                        days_elapsed_for_percent = min(summary['overall_progress']['current_day_of_plan'], total_plan_days)
+                        summary['overall_progress']['completion_percentage'] = round((days_elapsed_for_percent / total_plan_days) * 100, 2)
+            
+            # 3. Get Last Logged Meal
+            c.execute("""
+                SELECT meal_id, meal_type, meal_name, calories, notes, created_at
+                FROM LoggedMeal
+                WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            last_meal = c.fetchone()
+            if last_meal:
+                summary['last_logged_meal'] = dict(last_meal)
+
+            return {'success': True, 'summary': summary}
+
+        except sqlite3.Error as e:
+            print(f"Database error fetching diet summary: {e}")
+            return {'success': False, 'error': f'Database error: {str(e)}'}
+        except Exception as e:
+            print(f"An unexpected error occurred fetching diet summary: {e}")
+            return {'success': False, 'error': f'An unexpected error occurred: {str(e)}'}
+        finally:
+            conn.close()
     
     def get_user_dietary_preferences(self, user_id):
         """Get user's dietary preferences and goals"""
@@ -149,6 +634,177 @@ class DietPlanSystem:
         if result:
             return dict(result)
         return None
+    
+    def get_dietary_habit_analytics(self, period_days=30):
+        """
+        Retrieves aggregated dietary habit data for analytics for the admin dashboard.
+        Args:
+            period_days (int): The number of past days to consider for analytics.
+        Returns:
+            dict: A dictionary containing aggregated dietary habit data.
+        """
+        conn = self.get_db_connection()
+        conn.row_factory = sqlite3.Row # Ensure dictionary-like access to rows
+        cursor = conn.cursor()
+
+        analytics_data = {
+            "total_users": 0,
+            "users_with_diet_plans": 0,
+            "average_daily_calories_per_user": {},
+            "meal_type_distribution": {},
+            "top_logged_meals": [],
+            "dietary_goal_distribution": {},
+            "allergy_distribution": {},
+            "top_scanned_foods": [],
+            "average_bmi_by_dietary_goal": {},
+            "calorie_adherence_over_time": []
+        }
+
+        try:
+            # 1. Total Users
+            cursor.execute("SELECT COUNT(user_id) AS total_users FROM User")
+            analytics_data["total_users"] = cursor.fetchone()["total_users"]
+
+            # 2. Users with Diet Plans
+            cursor.execute("SELECT COUNT(DISTINCT user_id) AS users_with_plans FROM DietPlan")
+            analytics_data["users_with_diet_plans"] = cursor.fetchone()["users_with_plans"]
+
+            # Calculate date range for recent data
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=period_days)
+            start_date_str = start_date.strftime('%Y-%m-%d')
+            end_date_str = end_date.strftime('%Y-%m-%d')
+
+
+            # 3. Average Daily Calories Per User & Calorie Adherence Over Time
+            cursor.execute("""
+                SELECT
+                    dpp.user_id,
+                    p.full_name,
+                    SUM(dpp.calories_consumed) AS total_calories,
+                    COUNT(DISTINCT dpp.date) AS total_days_logged
+                FROM UserDietPlanProgress dpp
+                JOIN User u ON dpp.user_id = u.user_id
+                LEFT JOIN Profile p ON u.user_id = p.user_id
+                WHERE dpp.date BETWEEN ? AND ?
+                GROUP BY dpp.user_id
+            """, (start_date_str, end_date_str))
+
+            user_calorie_data = cursor.fetchall()
+            for row in user_calorie_data:
+                user_id = row["user_id"]
+                full_name = row["full_name"] if row["full_name"] else user_id # Use full_name if available
+                total_calories = row["total_calories"]
+                total_days_logged = row["total_days_logged"]
+                if total_days_logged > 0:
+                    avg_daily_calories = total_calories / total_days_logged
+                    analytics_data["average_daily_calories_per_user"][full_name] = round(avg_daily_calories, 2)
+
+            # Calorie adherence over time (aggregate daily averages)
+            cursor.execute("""
+                SELECT
+                    date,
+                    AVG(calories_consumed) AS average_calories,
+                    AVG(meals_completed) AS average_meals_completed
+                FROM UserDietPlanProgress
+                WHERE date BETWEEN ? AND ?
+                GROUP BY date
+                ORDER BY date
+            """, (start_date_str, end_date_str))
+            analytics_data["calorie_adherence_over_time"] = [dict(row) for row in cursor.fetchall()]
+
+
+            # 4. Meal Type Distribution & Top Logged Meals
+            cursor.execute("""
+                SELECT meal_type, COUNT(*) AS count
+                FROM LoggedMeal
+                WHERE created_at BETWEEN ? AND ?
+                GROUP BY meal_type
+                ORDER BY count DESC
+            """, (start_date_str + ' 00:00:00', end_date_str + ' 23:59:59'))
+            meal_type_counts = cursor.fetchall()
+            total_logged_meals_count = sum(row["count"] for row in meal_type_counts)
+            for row in meal_type_counts:
+                analytics_data["meal_type_distribution"][row["meal_type"]] = {
+                    "count": row["count"],
+                    "percentage": round((row["count"] / total_logged_meals_count) * 100, 2) if total_logged_meals_count > 0 else 0
+                }
+
+            cursor.execute("""
+                SELECT meal_name, COUNT(*) AS count
+                FROM LoggedMeal
+                WHERE created_at BETWEEN ? AND ?
+                GROUP BY meal_name
+                ORDER BY count DESC
+                LIMIT 10
+            """, (start_date_str + ' 00:00:00', end_date_str + ' 23:59:59'))
+            analytics_data["top_logged_meals"] = [dict(row) for row in cursor.fetchall()]
+
+
+            # 5. Dietary Goal Distribution
+            cursor.execute("""
+                SELECT dietary_goal, COUNT(*) AS count
+                FROM UserDietPreference
+                GROUP BY dietary_goal
+                ORDER BY count DESC
+            """)
+            goal_counts = cursor.fetchall()
+            total_goals = sum(row["count"] for row in goal_counts)
+            for row in goal_counts:
+                analytics_data["dietary_goal_distribution"][row["dietary_goal"]] = {
+                    "count": row["count"],
+                    "percentage": round((row["count"] / total_goals) * 100, 2) if total_goals > 0 else 0
+                }
+
+            # 6. Allergy Distribution
+            cursor.execute("""
+                SELECT allergies FROM UserDietPreference WHERE allergies IS NOT NULL AND allergies != ''
+            """)
+            all_allergies = []
+            for row in cursor.fetchall():
+                # Assuming allergies are stored as comma-separated string
+                allergies_list = [a.strip() for a in row["allergies"].split(',') if a.strip()]
+                all_allergies.extend(allergies_list)
+
+            allergy_counts = Counter(all_allergies)
+            analytics_data["allergy_distribution"] = dict(allergy_counts)
+
+
+            # 7. Top Scanned Foods
+            cursor.execute("""
+                SELECT food_name, COUNT(*) AS count
+                FROM MealScans
+                WHERE timestamp BETWEEN ? AND ?
+                GROUP BY food_name
+                ORDER BY count DESC
+                LIMIT 10
+            """, (start_date_str + ' 00:00:00', end_date_str + ' 23:59:59'))
+            analytics_data["top_scanned_foods"] = [dict(row) for row in cursor.fetchall()]
+
+            # 8. Average BMI by Dietary Goal
+            cursor.execute("""
+                SELECT
+                    udp.dietary_goal,
+                    AVG(p.bmi) AS average_bmi,
+                    COUNT(DISTINCT u.user_id) as user_count
+                FROM UserDietPreference udp
+                JOIN User u ON udp.user_id = u.user_id
+                JOIN Profile p ON u.user_id = p.user_id
+                WHERE p.bmi IS NOT NULL AND p.bmi > 0
+                GROUP BY udp.dietary_goal
+            """)
+            for row in cursor.fetchall():
+                analytics_data["average_bmi_by_dietary_goal"][row["dietary_goal"]] = {
+                    "average_bmi": round(row["average_bmi"], 2),
+                    "user_count": row["user_count"]
+                }
+        except Exception as e:
+            print(f"Error fetching dietary habit analytics: {e}")
+            # Optionally, return an error state or partial data
+            return {'error': str(e)}
+        finally:
+            conn.close()
+        return analytics_data
     
     def load_allergen_map(self):
         conn = self.get_db_connection()
@@ -497,7 +1153,7 @@ class DietPlanSystem:
         # Create Ingredient table
         c.execute('''CREATE TABLE IF NOT EXISTS Ingredient (
                     ingredient_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
+                    name TEXT NOT NULL UNIQUE,
                     category TEXT,
                     nutritional_value TEXT,
                     allergen_info TEXT)''')
@@ -528,6 +1184,8 @@ class DietPlanSystem:
         c.execute('CREATE INDEX IF NOT EXISTS idx_progress_user_date ON UserDietPlanProgress(user_id, date)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_progress_diet_plan ON UserDietPlanProgress(diet_plan_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_diet_pref_user ON UserDietPreference(user_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_recipe_title ON RecipeLibrary(title)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_logged_meal_user ON LoggedMeal(user_id)')
         
         conn.commit()
         conn.close()
@@ -538,6 +1196,46 @@ class DietPlanSystem:
 def setup_diet_plan_routes(app, diet_system):
     """Setup all diet plan routes with the Flask app"""
     
+    @app.route('/api/admin/ingredients', methods=['GET', 'POST'])
+    def admin_ingredients():
+        if request.method == 'GET':
+            ingredients = diet_system.get_all_ingredients()
+            return jsonify(ingredients)
+        elif request.method == 'POST':
+            data = request.json
+            result = diet_system.create_ingredient(data)
+            return jsonify(result), 201 if result['success'] else 400
+
+    @app.route('/api/admin/ingredients/<ingredient_id>', methods=['PUT', 'DELETE'])
+    def admin_ingredient_detail(ingredient_id):
+        if request.method == 'PUT':
+            data = request.json
+            result = diet_system.update_ingredient(ingredient_id, data)
+            return jsonify(result)
+        elif request.method == 'DELETE':
+            result = diet_system.delete_ingredient(ingredient_id)
+            return jsonify(result)
+
+    @app.route('/api/admin/recipes', methods=['GET', 'POST'])
+    def admin_recipes():
+        if request.method == 'GET':
+            recipes = diet_system.get_all_recipes()
+            return jsonify(recipes)
+        elif request.method == 'POST':
+            data = request.json
+            result = diet_system.create_recipe(data)
+            return jsonify(result), 201 if result['success'] else 400
+
+    @app.route('/api/admin/recipes/<recipe_id>', methods=['PUT', 'DELETE'])
+    def admin_recipe_detail(recipe_id):
+        if request.method == 'PUT':
+            data = request.json
+            result = diet_system.update_recipe(recipe_id, data)
+            return jsonify(result)
+        elif request.method == 'DELETE':
+            result = diet_system.delete_recipe(recipe_id)
+            return jsonify(result)
+
     @app.route('/api/generate-diet-plan', methods=['POST'])
     def generate_diet_plan_route():
         """Generate a personalized diet plan for a user"""
@@ -957,8 +1655,8 @@ def setup_diet_plan_routes(app, diet_system):
             
             conn = diet_system.get_db_connection()
             c = conn.cursor()
-            
-            progress_id = f"PG{uuid.uuid4().hex[:8]}"
+
+            progress_id = self.generate_progress_id()
             current_date = datetime.now().date()
             
             c.execute("""
@@ -1049,6 +1747,26 @@ def setup_diet_plan_routes(app, diet_system):
         
         except Exception as e:
             return jsonify({'error': f'Failed to fetch recipe suggestions: {str(e)}'}), 500
+        
+    @app.route('/api/recipe-details', methods=['GET'])
+    def get_recipe_details():
+        title = request.args.get('title')
+        if not title:
+            return jsonify({'error': 'Missing title'}), 400
+
+        conn = diet_system.get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT nutrition_info FROM RecipeLibrary WHERE LOWER(title) = LOWER(?)", (title.lower(),))
+        row = c.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'error': 'Recipe not found'}), 404
+
+        nutrition = json.loads(row['nutrition_info']) if row['nutrition_info'] else {}
+        return jsonify({
+            'calories': nutrition.get('calories', 0)
+        }), 200
 
         
     @app.route('/api/log-meal', methods=['POST'])
@@ -1062,19 +1780,27 @@ def setup_diet_plan_routes(app, diet_system):
     def get_logged_meals_route(user_id):
         """Get user's logged meal history, grouped by date"""
         try:
-            if user_id.isdigit():
+            # Normalize user_id: handle int or string
+            if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
                 user_id = f"U{int(user_id):03d}"
 
             conn = diet_system.get_db_connection()
             c = conn.cursor()
 
+            # c.execute("""
+            #     SELECT meal_id, lm.diet_plan_id, meal_type, meal_name, calories, lm.notes, lm.created_at, date(lp.date) AS log_date
+            #     FROM LoggedMeal lm
+            #     LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
+            #     WHERE lm.user_id = ?
+            #     ORDER BY log_date DESC, lm.created_at DESC
+            # """, (user_id,))
+
             c.execute("""
-                SELECT meal_id, diet_plan_id, meal_type, meal_name, calories, notes, created_at, date(lp.date) AS log_date
-                FROM LoggedMeal lm
-                LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
-                WHERE lm.user_id = ?
-                ORDER BY log_date DESC, created_at DESC
-            """, (user_id,))
+            SELECT meal_id, diet_plan_id, meal_type, meal_name, calories, notes, created_at
+            FROM LoggedMeal
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        """, (user_id,))
 
             rows = c.fetchall()
             conn.close()
@@ -1082,19 +1808,36 @@ def setup_diet_plan_routes(app, diet_system):
             # Group by date
             history = {}
             for row in rows:
-                log_date = row['log_date'] or row['created_at'][:10]
-                if log_date not in history:
-                    history[log_date] = []
+                raw_created_at = row['created_at']
+            
+                dt_object = None
+                try:
+                    # Try parsing with milliseconds first
+                    dt_object = datetime.strptime(raw_created_at, '%Y-%m-%d %H:%M:%S.%f')
+                except ValueError:
+                    try:
+                        # If that fails, try parsing without milliseconds
+                        dt_object = datetime.strptime(raw_created_at, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        print(f"ERROR: Could not parse datetime string: {raw_created_at}")
+                        continue # Skip this row if it cannot be parsed
 
-                history[log_date].append({
-                    'meal_id': row['meal_id'],
-                    'diet_plan_id': row['diet_plan_id'],
-                    'meal_type': row['meal_type'],
-                    'meal_name': row['meal_name'],
-                    'calories': row['calories'],
-                    'notes': row['notes'],
-                    'logged_at': row['created_at']
-                })
+                if dt_object: # Only proceed if parsing was successful
+                    # Use the date part of the actual meal creation timestamp for grouping
+                    log_date = dt_object.date().isoformat()
+
+                    if log_date not in history:
+                        history[log_date] = []
+
+                    history[log_date].append({
+                        'meal_id': row['meal_id'],
+                        'diet_plan_id': row['diet_plan_id'],
+                        'meal_type': row['meal_type'],
+                        'meal_name': row['meal_name'],
+                        'calories': row['calories'],
+                        'notes': row['notes'],
+                        'logged_at': raw_created_at
+                    })
 
             return jsonify({
                 'success': True,
@@ -1102,10 +1845,71 @@ def setup_diet_plan_routes(app, diet_system):
             })
 
         except Exception as e:
+            print(f"Error fetching logged meals: {e}")
             return jsonify({'success': False, 'error': f'Failed to fetch logged meals: {str(e)}'}), 500
 
+    @app.route('/api/logged-meal/<meal_id>', methods=['DELETE'])
+    def delete_meal_route(meal_id):
+        """API route to delete a user meal"""
+        result = diet_system.delete_logged_meal(meal_id)
+        return jsonify(result), 200 if result.get('success') else 500
 
+    @app.route('/api/logged-meal/<meal_id>', methods=['PUT'])
+    def update_meal_route(meal_id):
+        """API route to update a user meal"""
+        data = request.get_json()
+        result = diet_system.update_logged_meal(meal_id, data)
+        return jsonify(result), 200 if result.get('success') else 500
+    
+    @app.route('/api/user-progress/<user_id>/<date>', methods=['GET'])
+    def get_user_progress_by_date_route(user_id, date):
+        """Get user's diet plan progress for a specific date."""
+        try:
+            # Normalize user_id: handle int or string
+            if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
+                user_id = f"U{int(user_id):03d}"
 
+            # Validate date format (optional but recommended)
+            try:
+                datetime.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD.'}), 400
+
+            result = diet_system.get_user_progress_for_date(user_id, date)
+            return jsonify(result), 200 if result.get('success') else 500
+
+        except Exception as e:
+            print(f"Error fetching user progress by date: {e}")
+            return jsonify({'success': False, 'error': f'Failed to fetch user progress: {str(e)}'}), 500
+        
+    @app.route('/api/user-diet-summary/<user_id>', methods=['GET'])
+    def get_user_diet_summary_route(user_id):
+        """Get user's diet plan summary."""
+        try:
+            if user_id.isdigit():
+                user_id = f"U{int(user_id):03d}"
+            
+            result = diet_system.get_user_diet_summary(user_id)
+            return jsonify(result), 200 if result.get('success') else 500
+        except Exception as e:
+            print(f"Error fetching diet summary: {e}")
+            return jsonify({'success': False, 'error': f'Failed to fetch diet summary: {str(e)}'}), 500
+
+    @app.route('/api/admin/dietary-analytics', methods=['GET'])
+    def get_admin_dietary_analytics_route():
+        """
+        Admin endpoint to get aggregated dietary habit analytics.
+        Optional query parameter 'period_days' to specify the duration for analytics.
+        """
+        try:
+            period_days = request.args.get('period_days', type=int, default=30)
+            result = diet_system.get_dietary_habit_analytics(period_days)
+            if "error" in result:
+                return jsonify({'success': False, 'error': result['error']}), 500
+            return jsonify({'success': True, 'data': result}), 200
+        except Exception as e:
+            print(f"Error fetching admin dietary analytics: {e}")
+            return jsonify({'success': False, 'error': f'Failed to fetch dietary analytics: {str(e)}'}), 500
 
 # Integration helper function
 def integrate_diet_system_with_app(app, get_db_connection_func):
