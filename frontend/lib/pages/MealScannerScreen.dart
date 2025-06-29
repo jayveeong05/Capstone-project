@@ -4,6 +4,7 @@ import 'package:frontend/pages/MealScanHistoryScreen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../services/meal_scanner_service.dart'; // Adjust the import path as necessary
 
 class MealScannerScreen extends StatefulWidget {
   final String userId;
@@ -17,6 +18,8 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
   File? _selectedImage;
   bool _isLoading = false;
   Map<String, dynamic>? _scanResult;
+  bool _isLogging = false;
+  final MealScannerService _mealScannerService = MealScannerService();
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -51,6 +54,177 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Upload failed: ${json.decode(respStr)['error'] ?? respStr}')),
       );
+    }
+  }
+
+  Future<void> _showLogMealDialog() async {
+    if (_scanResult == null) return;
+
+    final selectedMealType = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return SimpleDialog(
+          title: const Text('Log Meal As'),
+          children: <Widget>[
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'Breakfast'),
+              child: const Text('Breakfast'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'Lunch'),
+              child: const Text('Lunch'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'Dinner'),
+              child: const Text('Dinner'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'Snack'),
+              child: const Text('Snack'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selectedMealType != null) {
+      // If a meal type was selected, proceed to log it
+      _logMeal(selectedMealType);
+    }
+  }
+
+  Future<void> _logMeal(String mealType) async {
+    if (_scanResult == null) return;
+
+    setState(() => _isLogging = true);
+
+    final uri = Uri.parse('http://10.0.2.2:5000/api/log-meal');
+    try {
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': widget.userId,
+          'meal_name': _scanResult!['food_name'],
+          'calories': _scanResult!['calories'],
+          'meal_type': mealType,
+          'notes': 'Logged via Meal Scanner',
+        }),
+      );
+
+      final responseBody = json.decode(response.body);
+
+      if (response.statusCode == 200 && responseBody['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_scanResult!['food_name']} logged as $mealType successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to log meal: ${responseBody['error'] ?? 'Unknown server error'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('An error occurred while logging: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isLogging = false);
+    }
+  }
+
+  Future<void> _selectAlternative(String alternativeFoodName) async {
+    if (_scanResult == null || _scanResult!['meal_scan_id'] == null) return;
+
+    setState(() {
+      _isLoading = true;
+      // Optimistically update the food name in UI
+      _scanResult!['food_name'] = alternativeFoodName;
+    });
+
+    try {
+      final updatedScanResult = await _mealScannerService.updateMealScanWithFoodName(
+        _scanResult!['meal_scan_id'],
+        alternativeFoodName,
+      );
+
+      if (updatedScanResult.success) {
+        setState(() {
+          _scanResult = updatedScanResult.toJson(); // Update _scanResult with full new data
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Updated to "$alternativeFoodName"')),
+          );
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update meal: ${updatedScanResult.error ?? 'Unknown error'}')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating meal: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _confirmAndDeleteScan() async {
+    if (_scanResult == null || _scanResult!['meal_scan_id'] == null) return;
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Scan?'),
+          content: const Text('Are you sure you want to delete this meal scan? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      try {
+        final success = await _mealScannerService.deleteMealScan(_scanResult!['meal_scan_id']);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Meal scan deleted.')),
+          );
+          setState(() {
+            _scanResult = null;
+            _selectedImage = null;
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete meal scan.')),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting meal scan: $e')),
+        );
+      } finally {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -157,9 +331,10 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.history),
-                  label: const Text('View History'),
+                  label: const Text('View Scan History'),
                   style: ElevatedButton.styleFrom(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                     backgroundColor: Colors.deepPurple[50],
@@ -239,11 +414,44 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                                       spacing: 8,
                                       children: List<Widget>.from(
                                         (_scanResult!['alternatives'] as List)
-                                            .map((alt) => Chip(label: Text(alt))),
+                                            .map((alt) => ActionChip( 
+                                              label: Text(alt),
+                                              onPressed: () => _selectAlternative(alt), // New onPressed
+                                            ),
+                                          ),
                                       ),
                                     ),
                                   ],
                                 ),
+                                const SizedBox(height: 20),
+                                if (_isLogging)
+                                  const Center(child: Padding(
+                                    padding: EdgeInsets.all(8.0),
+                                    child: CircularProgressIndicator(),
+                                  ))
+                                else
+                                  Center(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.post_add),
+                                      label: const Text('Log This Meal'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green[600],
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                                      ),
+                                      onPressed: _showLogMealDialog,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Align(
+                                    alignment: Alignment.center,
+                                    child: TextButton.icon(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      label: const Text('Delete Scan', style: TextStyle(color: Colors.red)),
+                                      onPressed: _confirmAndDeleteScan,
+                                    ),
+                                  ),
                               const SizedBox(height: 12),
                               if (_scanResult!['image_path'] != null)
                                 Text(

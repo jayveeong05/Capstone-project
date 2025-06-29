@@ -33,7 +33,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 food_recognizer = FoodRecognition('5deb6d79da89437a81b87a21accd1440')
 
 # Configuration for meal scanner
-UPLOAD_FOLDER = './backend/uploads'
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
 
@@ -1864,73 +1864,170 @@ def get_meal_scans(user_id):
 
 @app.route('/api/meal-scan/<meal_scan_id>', methods=['PUT'])
 def update_meal_scan(meal_scan_id):
-    """Update a meal scan entry"""
+    """
+    Update a meal scan entry, with optional re-fetching of nutrition
+    if the food_name is changed. 'alternatives' column is NOT used.
+    """
+    conn = None
     try:
         data = request.get_json()
-        
+
         if not data:
-            return jsonify({'error': 'No data provided', 'success': False}), 400
-        
-        food_name = data.get('food_name')
-        calories = data.get('calories')
-        
-        if not food_name and calories is None:
-            return jsonify({'error': 'Either food_name or calories must be provided', 'success': False}), 400
-        
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
         conn = get_db_connection()
-        c = conn.cursor()
+        cursor = conn.cursor()
+
+        # 1. Retrieve current scan data to compare food_name and get image_path/nutrients/calories
+        # Make sure 'alternatives' is NOT in this SELECT query
+        cursor.execute(
+            'SELECT food_name, calories, nutrients, image_path FROM MealScans WHERE meal_scan_id = ?',
+            (meal_scan_id,)
+        )
+        current_scan = cursor.fetchone()
+
+        if not current_scan:
+            return jsonify({'success': False, 'error': 'Meal scan not found'}), 404
+
+        current_food_name = current_scan['food_name']
+        current_image_path = current_scan['image_path']
+
+        new_food_name = data.get('food_name')
+        new_timestamp = data.get('timestamp') # If you allow updating timestamp
+
+        fields_to_update = []
+        values_to_update = []
         
-        if food_name and calories is not None:
-            c.execute('UPDATE MealScans SET food_name = ?, calories = ? WHERE meal_scan_id = ?',
-                     (food_name, calories, meal_scan_id))
-        elif food_name:
-            c.execute('UPDATE MealScans SET food_name = ? WHERE meal_scan_id = ?',
-                     (food_name, meal_scan_id))
-        else:
-            c.execute('UPDATE MealScans SET calories = ? WHERE meal_scan_id = ?',
-                     (calories, meal_scan_id))
-        
-        if c.rowcount > 0:
-            conn.commit()
-            conn.close()
-            return jsonify({'success': True, 'message': 'Meal scan updated successfully'})
-        else:
-            conn.close()
-            return jsonify({'error': 'Meal scan not found', 'success': False}), 404
+        updated_calories = current_scan['calories']
+        updated_nutrients = json.loads(current_scan['nutrients'])
+
+        # 2. Handle food_name update and conditional nutrition re-fetch
+        if new_food_name is not None and new_food_name != current_food_name:
+            print(f"Food name changed from '{current_food_name}' to '{new_food_name}'. Re-fetching nutrition...")
+            fetched_nutrition = food_recognizer.get_nutrition_info(new_food_name)
+
+            if not fetched_nutrition:
+                return jsonify({'success': False, 'error': 'Could not retrieve nutrition for new food name'}), 500
             
+            fields_to_update.append('food_name = ?')
+            values_to_update.append(new_food_name)
+
+            fields_to_update.append('calories = ?')
+            values_to_update.append(int(fetched_nutrition.get('calories', 0)))  # Ensure calories is an integer
+
+            fields_to_update.append('nutrients = ?')
+            values_to_update.append(json.dumps(fetched_nutrition))
+
+            updated_calories = int(fetched_nutrition.get('calories', 0))
+            updated_nutrients = fetched_nutrition
+            
+        else: # If food_name is not changing, but maybe other fields could be updated
+            # If new_food_name is provided but is the same, no action needed for food_name/nutrition here
+            if new_food_name is not None:
+                new_food_name = current_food_name # Revert to current if no change intended
+
+            # If you were allowing calories/nutrients to be passed directly for update without food_name change
+            # new_calories = data.get('calories')
+            # new_nutrients = data.get('nutrients')
+            # if new_calories is not None:
+            #     fields_to_update.append('calories = ?')
+            #     values_to_update.append(new_calories)
+            # if new_nutrients is not None:
+            #     fields_to_update.append('nutrients = ?')
+            #     values_to_update.append(json.dumps(new_nutrients))
+
+        if new_timestamp is not None:
+            fields_to_update.append('timestamp = ?')
+            values_to_update.append(new_timestamp)
+
+
+        if not fields_to_update:
+            return jsonify({'success': True, 'message': 'No fields to update'}), 200 # Indicate success if nothing changed
+
+        query_str = f"UPDATE MealScans SET {', '.join(fields_to_update)} WHERE meal_scan_id = ?"
+        values_to_update.append(meal_scan_id)
+
+        cursor.execute(query_str, tuple(values_to_update))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({'success': False, 'error': 'Meal scan not found after update attempt'}), 404
+
+        # Return the updated meal scan data (EXCLUDING alternatives)
+        return jsonify({
+            'success': True,
+            'message': 'Meal scan updated successfully',
+            'data': {
+                'meal_scan_id': meal_scan_id,
+                'food_name': new_food_name if new_food_name is not None else current_food_name,
+                'alternatives': [], # Explicitly NOT returned, as per requirement
+                'calories': updated_calories,
+                'nutrients': updated_nutrients,
+                'image_path': current_image_path,
+            }
+        }), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error in update_meal_scan: {e}")
+        return jsonify({'success': False, 'error': f'Database error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': f'Error updating meal scan: {str(e)}', 'success': False}), 500
+        print(f"An unexpected error occurred in update_meal_scan: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/api/meal-scan/<meal_scan_id>', methods=['DELETE'])
 def delete_meal_scan(meal_scan_id):
-    """Delete a meal scan entry"""
+    """
+    Deletes a meal scan entry by meal_scan_id, including its associated image file.
+    """
+    conn = None
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        
-        # Get image path before deletion to clean up file
+
         c.execute('SELECT image_path FROM MealScans WHERE meal_scan_id = ?', (meal_scan_id,))
-        result = c.fetchone()
+        scan_to_delete = c.fetchone()
+
+        if not scan_to_delete:
+            return jsonify({'success': False, 'error': 'Meal scan not found'}), 404
+
+        image_filename = scan_to_delete['image_path']
+        image_filepath = os.path.join(UPLOAD_FOLDER, image_filename)
+
+        c.execute('DELETE FROM MealScans WHERE meal_scan_id = ?', (meal_scan_id,))
+        conn.commit()
+
+        if c.rowcount == 0:
+            return jsonify({'success': False, 'error': 'Meal scan not found or already deleted'}), 404
         
-        if result:
-            image_path = result[0]
-            
-            # Delete from database
-            c.execute('DELETE FROM MealScans WHERE meal_scan_id = ?', (meal_scan_id,))
-            conn.commit()
-            
-            # Clean up image file
-            if image_path and os.path.exists(image_path):
-                os.remove(image_path)
-            
-            conn.close()
-            return jsonify({'success': True, 'message': 'Meal scan deleted successfully'})
+        if os.path.exists(image_filepath):
+            try:
+                os.remove(image_filepath)
+                print(f"Deleted image file: {image_filepath}")
+            except OSError as file_err:
+                print(f"Error deleting image file {image_filepath}: {file_err}")
+                return jsonify({
+                    'success': True,
+                    'message': 'Meal scan database record deleted, but failed to delete image file.',
+                    'file_error': str(file_err)
+                }), 200 
         else:
-            conn.close()
-            return jsonify({'error': 'Meal scan not found', 'success': False}), 404
-            
+            print(f"Image file not found for deletion: {image_filepath}")
+
+
+        return jsonify({'success': True, 'message': 'Meal scan and associated image deleted successfully'}), 200
+
+    except sqlite3.Error as e:
+        print(f"Database error during meal scan deletion: {e}")
+        return jsonify({'success': False, 'error': f'Database error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': f'Error deleting meal scan: {str(e)}', 'success': False}), 500
+        print(f"An unexpected error occurred during meal scan deletion: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/api/nutrition-info/<food_name>', methods=['GET'])
 def get_nutrition_info(food_name):

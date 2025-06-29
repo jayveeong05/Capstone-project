@@ -27,11 +27,24 @@ class MealScanResult {
       mealScanId: json['meal_scan_id'] ?? '',
       foodName: json['food_name'] ?? '',
       alternatives: List<String>.from(json['alternatives'] ?? []),
-      calories: json['calories'] ?? 0,
+      calories: json['calories'] is double ? json['calories'].toInt() : json['calories'] ?? 0,
       nutrients: json['nutrients'] ?? {},
       success: json['success'] ?? false,
       error: json['error'],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    // Note: alternatives are intentionally NOT included here as they are not saved to DB
+    return {
+      'meal_scan_id': mealScanId,
+      'food_name': foodName,
+      'calories': calories,
+      'nutrients': nutrients,
+      'success': success,
+      'error': error,
+      // 'alternatives': alternatives, // OMITTED from toJson as they are not sent to DB
+    };
   }
 }
 
@@ -150,6 +163,102 @@ class MealScannerService {
 
       return response.statusCode == 200;
     } catch (e) {
+      return false;
+    }
+  }
+
+  Future<MealScanResult> updateMealScanWithFoodName(String mealScanId, String newFoodName) async {
+    try {
+      print('DEBUG (MealScannerService): Sending PUT request to $baseUrl/meal-scan/$mealScanId');
+      final requestBody = json.encode({
+        'food_name': newFoodName,
+      });
+      print('DEBUG (MealScannerService): Request Body: $requestBody');
+
+      final response = await _client.put(
+        Uri.parse('$baseUrl/meal-scan/$mealScanId'),
+        headers: {'Content-Type': 'application/json'},
+        body: requestBody,
+      );
+
+      print('DEBUG (MealScannerService): Response Status Code: ${response.statusCode}');
+      print('DEBUG (MealScannerService): Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseBody = json.decode(response.body);
+
+        // Extract top-level success flag
+        final bool success = responseBody['success'] ?? false;
+        
+        // Extract data payload
+        final Map<String, dynamic> data = responseBody['data'] ?? {};
+
+        // Determine error message for failure cases
+        String? errorMessage;
+        if (!success) { // If top-level success is false
+          if (responseBody.containsKey('error') && responseBody['error'] != null) {
+            errorMessage = responseBody['error'].toString();
+          } else if (responseBody.containsKey('message') && responseBody['message'] != null) {
+            errorMessage = responseBody['message'].toString();
+          } else {
+            errorMessage = 'Backend reported failure (status 200, success: false) with no specific error message.';
+          }
+        }
+
+        // Manually construct MealScanResult using data from both top-level and 'data' field
+        return MealScanResult(
+          mealScanId: data['meal_scan_id'] ?? mealScanId, // Use data's ID if present, else fallback
+          foodName: data['food_name'] ?? newFoodName,     // Use data's food name, else fallback
+          alternatives: List<String>.from(data['alternatives'] ?? []),
+          // Safely convert calories from data, handling int/double
+          calories: data['calories'] is double ? data['calories'].toInt() : data['calories'] ?? 0,
+          nutrients: data['nutrients'] ?? {},
+          success: success, // Use the actual top-level success flag
+          error: errorMessage, // Only populate error message if success is false
+        );
+      } else {
+        // Handle non-200 status codes as definite failures
+        String errorMessage = 'Server error ${response.statusCode}: ${response.body}';
+        return MealScanResult(
+          mealScanId: mealScanId, // Fallback
+          foodName: newFoodName, // Fallback
+          alternatives: [],
+          calories: 0,
+          nutrients: {},
+          success: false,
+          error: errorMessage,
+        );
+      }
+    } catch (e) {
+      print('DEBUG (MealScannerService): Caught network or parsing error: $e');
+      return MealScanResult(
+        mealScanId: mealScanId, // Fallback
+        foodName: newFoodName, // Fallback
+        alternatives: [],
+        calories: 0,
+        nutrients: {},
+        success: false,
+        error: 'Network or parsing exception: $e',
+      );
+    }
+  }
+
+
+  Future<bool> deleteMealScan(String mealScanId) async {
+    try {
+      final response = await _client.delete(
+        Uri.parse('$baseUrl/meal-scan/$mealScanId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print('Failed to delete meal scan: ${response.statusCode} ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error deleting meal scan: $e');
       return false;
     }
   }
