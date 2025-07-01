@@ -73,7 +73,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -208,7 +208,21 @@ def generate_log_id(): #
         return f'L{numeric_part:03d}'
     else:
         return 'L001'
-
+    
+def generate_diet_pref_id():
+    """Generate unique diet preference ID"""
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT diet_pref_id FROM UserDietPreference ORDER BY diet_pref_id DESC LIMIT 1")
+    last_id_row = c.fetchone()
+    conn.close()
+    if last_id_row:
+        last_id = last_id_row['diet_pref_id']
+        numeric_part = int(last_id[2:]) + 1
+        return f'DP{numeric_part:03d}'
+    else:
+        return 'DP001'
+    
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
