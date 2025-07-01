@@ -93,6 +93,41 @@ class _FitnessPageManagementPageState extends State<FitnessPageManagementPage> {
     );
   }
 
+Future<void> _searchExercises(String query) async {
+    if (query.isEmpty) {
+      _searchQuery = '';
+      _exercises.clear();
+      _fetchExercises();
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _searchQuery = query;
+    });
+
+    final url = Uri.parse('http://10.0.2.2:5000/search?q=$query');
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _exercises = data['exercises'];
+          _hasMore = false;
+        });
+      } else {
+        print("Search failed: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Error during search: $e");
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   void _navigateToEditPage(dynamic exMap) {
     final exercise = Exercise(
       id: exMap['Exercise_ID'],
@@ -147,22 +182,22 @@ class _FitnessPageManagementPageState extends State<FitnessPageManagementPage> {
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      labelText: 'Search exercises',
-                      border: OutlineInputBorder(),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          labelText: 'Search exercises',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: _searchExercises,
+                      ),
                     ),
-                    onSubmitted: (q) => _fetchExercises(page: 1),
-                  ),
-                ),
-                SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: () => _fetchExercises(page: 1),
-                  child: Text('Refresh'),
-                ),
-              ],
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () => _searchExercises(_searchController.text),
+                      child: Text('Search'),
+                    ),
+                  ],
             ),
           ),
           Expanded(
