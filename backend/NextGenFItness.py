@@ -73,7 +73,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('./backend/NextGenFitness.db')
+    conn = sqlite3.connect('NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'customized_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -1040,15 +1041,26 @@ Future<void> _fetchUserPlansWithProgress() async {
           });
           // Handle navigation for bottom bar based on the documentation
           switch (index) {
-            case 0: // Home
-              // Already on Home, perhaps scroll to top or refresh
-              print('Navigated to Home');
-              break;
-            case 1: // Customize (Changed from Plans)
-              // TODO: Navigate to a consolidated Plans/Customize page or directly to Workout/Diet overview
-              print('Navigated to Customize');
-              // Example: Navigator.of(context).pushNamed('/customize');
-              break;
+          case 0: // Home
+            print('Navigated to Home');
+            break;
+
+          case 1: // Customize
+            print('Navigated to Customize');
+            () async {
+              SharedPreferences prefs = await SharedPreferences.getInstance();
+              int? userId = prefs.getInt('user_id');
+
+              if (userId != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AllPlansPage(userId: userId),
+                  ),
+                );
+              }
+            }(); // ← Notice the () at the end to call the function
+            break;
             case 2: // Progress
               // TODO: Navigate to Detailed Progress Tracking page
               print('Navigated to AI Chatbot');
