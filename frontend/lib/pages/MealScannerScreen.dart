@@ -269,7 +269,13 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Meal Scanner')),
+      appBar: AppBar(
+        title: const Text('Meal Scanner'),
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+        elevation: 1,
+      ),
+      backgroundColor: Colors.grey[100],
       body: Stack(
         children: [
           Padding(
@@ -277,27 +283,31 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
             child: Column(
               children: [
                 Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  color: Colors.white,
                   elevation: 3,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                   child: SizedBox(
                     height: 200,
                     width: double.infinity,
                     child: _selectedImage != null
                         ? ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(18),
                             child: Image.file(_selectedImage!, fit: BoxFit.cover, width: double.infinity),
                           )
                         : Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.fastfood, size: 60, color: Colors.deepPurple[100]),
-                              SizedBox(height: 8),
-                              Text("No image selected", style: TextStyle(color: Colors.grey[600])),
+                              Icon(Icons.fastfood, size: 60, color: Colors.blue[100]),
+                              const SizedBox(height: 8),
+                              Text(
+                                "No image selected",
+                                style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                              ),
                             ],
                           ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 Row(
                   children: [
                     Expanded(
@@ -305,11 +315,12 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                         icon: const Icon(Icons.photo_library),
                         label: const Text('Pick Image'),
                         style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          backgroundColor: Colors.deepPurple[100],
-                          foregroundColor: Colors.deepPurple[800],
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          backgroundColor: Colors.blue[50],
+                          foregroundColor: Colors.blue[700],
                           elevation: 0,
-                          padding: EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         onPressed: _pickImage,
                       ),
@@ -320,26 +331,29 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                         icon: const Icon(Icons.cloud_upload),
                         label: const Text('Upload & Scan'),
                         style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          backgroundColor: Colors.deepPurple[200],
-                          foregroundColor: Colors.deepPurple[900],
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          backgroundColor: Colors.blue[100],
+                          foregroundColor: Colors.blue[900],
                           elevation: 0,
-                          padding: EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         onPressed: _isLoading ? null : _uploadImage,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 18),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.history),
                   label: const Text('View Scan History'),
                   style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    backgroundColor: Colors.deepPurple[50],
-                    foregroundColor: Colors.deepPurple,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    backgroundColor: Colors.blue[50],
+                    foregroundColor: Colors.blue[700],
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                    elevation: 0,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   onPressed: () {
                     Navigator.push(
@@ -350,13 +364,13 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                     );
                   },
                 ),
-
                 const SizedBox(height: 24),
                 if (_scanResult != null)
                   Expanded(
                     child: SingleChildScrollView(
                       child: Card(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        color: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                         elevation: 4,
                         margin: const EdgeInsets.only(top: 16),
                         child: Padding(
@@ -366,8 +380,8 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Icon(Icons.restaurant_menu, color: Colors.deepPurple, size: 28),
-                                  SizedBox(width: 10),
+                                  Icon(Icons.restaurant_menu, color: Colors.blue[700], size: 28),
+                                  const SizedBox(width: 10),
                                   Text(
                                     _scanResult!['food_name']?.toString().toUpperCase() ?? '',
                                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -385,7 +399,7 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                               const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  const Icon(Icons.local_fire_department, color: Colors.red),
+                                  const Icon(Icons.local_fire_department, color: Colors.orange),
                                   const SizedBox(width: 8),
                                   Text(
                                     '${_scanResult!['calories']} kcal',
@@ -414,44 +428,44 @@ class _MealScannerScreenState extends State<MealScannerScreen> {
                                       spacing: 8,
                                       children: List<Widget>.from(
                                         (_scanResult!['alternatives'] as List)
-                                            .map((alt) => ActionChip( 
-                                              label: Text(alt),
-                                              onPressed: () => _selectAlternative(alt), // New onPressed
-                                            ),
-                                          ),
+                                            .map((alt) => ActionChip(
+                                                  label: Text(alt),
+                                                  onPressed: () => _selectAlternative(alt),
+                                                )),
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 20),
-                                if (_isLogging)
-                                  const Center(child: Padding(
-                                    padding: EdgeInsets.all(8.0),
-                                    child: CircularProgressIndicator(),
-                                  ))
-                                else
-                                  Center(
-                                    child: ElevatedButton.icon(
-                                      icon: const Icon(Icons.post_add),
-                                      label: const Text('Log This Meal'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green[600],
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                                      ),
-                                      onPressed: _showLogMealDialog,
+                              const SizedBox(height: 20),
+                              if (_isLogging)
+                                const Center(
+                                    child: Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: CircularProgressIndicator(),
+                                ))
+                              else
+                                Center(
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(Icons.post_add),
+                                    label: const Text('Log This Meal'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green[600],
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
                                     ),
+                                    onPressed: _showLogMealDialog,
                                   ),
-                                  const SizedBox(height: 12),
-                                  Align(
-                                    alignment: Alignment.center,
-                                    child: TextButton.icon(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      label: const Text('Delete Scan', style: TextStyle(color: Colors.red)),
-                                      onPressed: _confirmAndDeleteScan,
-                                    ),
-                                  ),
+                                ),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.center,
+                                child: TextButton.icon(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  label: const Text('Delete Scan', style: TextStyle(color: Colors.red)),
+                                  onPressed: _confirmAndDeleteScan,
+                                ),
+                              ),
                               const SizedBox(height: 12),
                               if (_scanResult!['image_path'] != null)
                                 Text(

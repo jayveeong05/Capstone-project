@@ -200,110 +200,198 @@ class _DietPreferencePageState extends State<DietPreferencePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Diet Preferences')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Diet Type'),
-                  value: _dietType,
-                  items: dietTypes.map((type) {
-                    return DropdownMenuItem(value: type, child: Text(type));
-                  }).toList(),
-                  onChanged: (val) => setState(() => _dietType = val!),
-                ),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Dietary Goal'),
-                  value: _dietaryGoal,
-                  items: goals.map((goal) {
-                    return DropdownMenuItem(value: goal, child: Text(goal));
-                  }).toList(),
-                  onChanged: (val) => setState(() => _dietaryGoal = val!),
-                ),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Cultural Restriction'),
-                  value: _culturalRestriction,
-                  items: culturalRestrictions.map((r) {
-                    return DropdownMenuItem(value: r, child: Text(r));
-                  }).toList(),
-                  onChanged: (val) => setState(() => _culturalRestriction = val!),
-                ),
-                TextFormField(
-                  decoration: const InputDecoration(
-                    labelText: 'Allergies (comma-separated)',
-                  ),
-                  onChanged: (val) => _allergies = val,
-                ),
-                const SizedBox(height: 20),
-                const Text('Ingredient Preferences'),
-                Row(
+      appBar: AppBar(
+        title: const Text('Diet Preferences'),
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+        elevation: 1,
+      ),
+      backgroundColor: Colors.grey[100],
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(18),
+          child: Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Autocomplete<String>(
-                        optionsBuilder: (TextEditingValue textEditingValue) {
-                          if (textEditingValue.text.isEmpty) {
-                            return const Iterable<String>.empty();
-                          }
-                          return _ingredientSuggestions.where((option) =>
-                              option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-                        },
-                        fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
-                          _ingredientController.text = controller.text;
-                          return TextFormField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(labelText: 'Ingredient Name'),
-                          );
-                        },
-                        onSelected: (String selection) {
-                          _ingredientController.text = selection;
-                        },
+                    _SectionHeader(icon: Icons.restaurant_menu, color: Colors.blue, title: 'Diet & Goal'),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(labelText: 'Diet Type', border: OutlineInputBorder()),
+                      value: _dietType,
+                      items: dietTypes.map((type) {
+                        return DropdownMenuItem(value: type, child: Text(type));
+                      }).toList(),
+                      onChanged: (val) => setState(() => _dietType = val!),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(labelText: 'Dietary Goal', border: OutlineInputBorder()),
+                      value: _dietaryGoal,
+                      items: goals.map((goal) {
+                        return DropdownMenuItem(value: goal, child: Text(goal));
+                      }).toList(),
+                      onChanged: (val) => setState(() => _dietaryGoal = val!),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(labelText: 'Cultural Restriction', border: OutlineInputBorder()),
+                      value: _culturalRestriction,
+                      items: culturalRestrictions.map((r) {
+                        return DropdownMenuItem(value: r, child: Text(r));
+                      }).toList(),
+                      onChanged: (val) => setState(() => _culturalRestriction = val!),
+                    ),
+                    const SizedBox(height: 22),
+                    _SectionHeader(icon: Icons.warning_amber, color: Colors.redAccent, title: 'Allergies'),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Allergies (comma-separated)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) => _allergies = val,
+                    ),
+                    const SizedBox(height: 22),
+                    _SectionHeader(icon: Icons.food_bank, color: Colors.green, title: 'Ingredient Preferences'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Autocomplete<String>(
+                            optionsBuilder: (TextEditingValue textEditingValue) {
+                              if (textEditingValue.text.isEmpty) {
+                                return const Iterable<String>.empty();
+                              }
+                              return _ingredientSuggestions.where((option) =>
+                                  option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                            },
+                            fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+                              _ingredientController.text = controller.text;
+                              return TextFormField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Ingredient Name',
+                                  border: OutlineInputBorder(),
+                                ),
+                              );
+                            },
+                            onSelected: (String selection) {
+                              _ingredientController.text = selection;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        DropdownButton<String>(
+                          value: _selectedPreferenceType,
+                          onChanged: (val) => setState(() => _selectedPreferenceType = val!),
+                          items: preferenceTypes.map((type) => DropdownMenuItem(
+                            value: type,
+                            child: Text(type),
+                          )).toList(),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.blueAccent),
+                          onPressed: _addIngredientPreference,
+                          tooltip: 'Add Preference',
+                        )
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (_ingredientPreferences.isNotEmpty)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: _ingredientPreferences.map((pref) => Chip(
+                          label: Text('${pref['ingredient_name']} (${pref['preference_type']})'),
+                          deleteIcon: const Icon(Icons.close),
+                          onDeleted: () => setState(() => _ingredientPreferences.remove(pref)),
+                          backgroundColor: pref['preference_type'] == 'Like'
+                              ? Colors.green[50]
+                              : pref['preference_type'] == 'Dislike'
+                                  ? Colors.red[50]
+                                  : Colors.orange[50],
+                          labelStyle: TextStyle(
+                            color: pref['preference_type'] == 'Like'
+                                ? Colors.green[800]
+                                : pref['preference_type'] == 'Dislike'
+                                    ? Colors.red[800]
+                                    : Colors.orange[800],
+                          ),
+                        )).toList(),
+                      ),
+                    const SizedBox(height: 24),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                      ),
+                    SizedBox(
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.save_alt),
+                        label: _loading
+                            ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                            : const Text('Save & Generate Plan', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade700,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                          elevation: 3,
+                        ),
+                        onPressed: _loading ? null : _submitPreferences,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    DropdownButton<String>(
-                      value: _selectedPreferenceType,
-                      onChanged: (val) => setState(() => _selectedPreferenceType = val!),
-                      items: preferenceTypes.map((type) => DropdownMenuItem(
-                        value: type,
-                        child: Text(type),
-                      )).toList(),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      onPressed: _addIngredientPreference,
-                    )
                   ],
                 ),
-                if (_ingredientPreferences.isNotEmpty)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: _ingredientPreferences.map((pref) => ListTile(
-                      title: Text('${pref['ingredient_name']} (${pref['preference_type']})'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => setState(() => _ingredientPreferences.remove(pref)),
-                      ),
-                    )).toList(),
-                  ),
-                const SizedBox(height: 20),
-                if (_error != null)
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
-                ElevatedButton(
-                  onPressed: _loading ? null : _submitPreferences,
-                  child: _loading
-                      ? const CircularProgressIndicator()
-                      : const Text('Save & Generate Plan'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// Helper widget for section headers
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.color,
+    required this.title,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 22),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,12 +1,9 @@
-// In MealLoggingPage.dart
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class MealLoggingPage extends StatefulWidget {
-  // --- NEW: Add mealToEdit as an optional parameter ---
   final Map<String, dynamic>? mealToEdit;
 
   const MealLoggingPage({super.key, this.mealToEdit});
@@ -88,7 +85,6 @@ class _MealLoggingPageState extends State<MealLoggingPage> {
 
     // --- NEW: Conditional logic for POST (new meal) or PUT (edit meal) ---
     if (_isEditing) {
-      // IMPORTANT: Replace 'http://localhost:5000' with your actual Flask backend URL
       response = await http.put(
         Uri.parse('http://10.0.2.2:5000/api/logged-meal/$_mealId'),
         headers: {'Content-Type': 'application/json'},
@@ -97,7 +93,6 @@ class _MealLoggingPageState extends State<MealLoggingPage> {
       successMessage = 'Meal updated successfully!';
       errorMessage = 'Failed to update meal.';
     } else {
-      // IMPORTANT: Replace 'http://localhost:5000' with your actual Flask backend URL
       response = await http.post(
         Uri.parse('http://10.0.2.2:5000/api/log-meal'),
         headers: {'Content-Type': 'application/json'},
@@ -113,7 +108,7 @@ class _MealLoggingPageState extends State<MealLoggingPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(successMessage)),
         );
-        // --- NEW: Pop with 'true' to signal history page to reload ---
+        // --- Pop with 'true' to signal history page to reload ---
         Navigator.pop(context, true); // Go back to previous page (history)
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -143,6 +138,124 @@ class _MealLoggingPageState extends State<MealLoggingPage> {
     }
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isEditing ? 'Edit Meal Log' : 'Log New Meal'),
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+      ),
+      backgroundColor: Colors.grey[100],
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20.0),
+              child: Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        DropdownButtonFormField<String>(
+                          value: _mealType,
+                          decoration: const InputDecoration(
+                            labelText: 'Meal Type',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.restaurant_menu),
+                          ),
+                          items: <String>['Breakfast', 'Lunch', 'Dinner', 'Snack']
+                              .map<DropdownMenuItem<String>>((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _mealType = newValue!;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 18),
+                        _buildMealNameAutocomplete(),
+                        const SizedBox(height: 18),
+                        TextFormField(
+                          controller: _caloriesController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Calories',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.local_fire_department, color: Colors.orange),
+                          ),
+                          validator: (value) {
+                            final num = double.tryParse(value ?? '');
+                            if (num == null || num <= 0) {
+                              return 'Enter valid calorie amount';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 18),
+                        TextFormField(
+                          controller: _notesController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Notes (optional)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.note_alt_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        SizedBox(
+                          height: 48,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade700,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: _isSubmitting ? null : _submitMeal,
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2.5,
+                                    ),
+                                  )
+                                : Text(
+                                    _isEditing ? 'Update Meal' : 'Log Meal',
+                                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_isSubmitting)
+            Container(
+              color: Colors.black.withOpacity(0.1),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMealNameAutocomplete() {
     return Autocomplete<String>(
       optionsBuilder: (TextEditingValue textEditingValue) async {
@@ -164,6 +277,7 @@ class _MealLoggingPageState extends State<MealLoggingPage> {
           decoration: const InputDecoration(
             labelText: 'Meal Name',
             border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.fastfood),
           ),
           validator: (value) =>
               value == null || value.isEmpty ? 'Enter meal name' : null,
@@ -200,80 +314,5 @@ class _MealLoggingPageState extends State<MealLoggingPage> {
         _caloriesController.text = '';
       });
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        // --- NEW: Dynamic AppBar title ---
-        title: Text(_isEditing ? 'Edit Meal Log' : 'Log New Meal'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              DropdownButtonFormField<String>(
-                value: _mealType,
-                decoration: const InputDecoration(
-                  labelText: 'Meal Type',
-                  border: OutlineInputBorder(),
-                ),
-                items: <String>['Breakfast', 'Lunch', 'Dinner', 'Snack']
-                    .map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _mealType = newValue!;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildMealNameAutocomplete(),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _caloriesController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Calories',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  final num = double.tryParse(value ?? '');
-                  if (num == null || num <= 0) {
-                    return 'Enter valid calorie amount';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _notesController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitMeal,
-                child: _isSubmitting
-                    ? const CircularProgressIndicator()
-                    // --- NEW: Dynamic button text ---
-                    : Text(_isEditing ? 'Update Meal' : 'Log Meal'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

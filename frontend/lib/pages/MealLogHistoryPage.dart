@@ -1,5 +1,3 @@
-// In MealLogHistoryPage.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -258,114 +256,190 @@ class _MealLogHistoryPageState extends State<MealLogHistoryPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Meal Log History'),
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+        elevation: 1,
       ),
+      backgroundColor: Colors.grey[100],
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : mealLogsByDate.isEmpty
-              ? const Center(
-                  child: Text('No meal logs yet. Log a meal to see it here!'),
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.fastfood, size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No meal logs yet.\nLog a meal to see it here!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 18, color: Colors.black54),
+                      ),
+                    ],
+                  ),
                 )
               : ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   children: mealLogsByDate.keys.map((date) {
                     final mealsForDate = mealLogsByDate[date]!;
                     final dailySummary = _calculateDailySummary(mealsForDate);
                     final totalCalories = dailySummary['totalCalories'];
                     final mealsCompleted = dailySummary['mealsCompleted'];
                     return Card(
-                      margin: const EdgeInsets.all(8.0),
-                      child: ExpansionTile(
-                        title: Text(
-                          date,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      elevation: 3,
+                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                          splashColor: Colors.blue.withOpacity(0.05),
+                          highlightColor: Colors.blue.withOpacity(0.03),
                         ),
-                        // Optionally, add a summary for the day here
-                        // trailing: Text('Total Kcal: ${calculateDailyTotal(mealsForDate)}'),
-                        subtitle: Text('Meals: $mealsCompleted | Total Kcal: $totalCalories'),
-                        children: mealsForDate.map((meal) {
-                          // --- WRAP ListTile with Dismissible for swipe-to-delete ---
-                          return Dismissible(
-                            key: Key(meal['meal_id']), // Unique key for Dismissible
-                            direction: DismissDirection.endToStart, // Swipe from right to left
-                            background: Container(
-                              color: Colors.red,
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: const Icon(Icons.delete, color: Colors.white),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+                          childrenPadding: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          title: Text(
+                            date,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.2,
                             ),
-                            confirmDismiss: (direction) => _deleteMeal(meal['meal_id']), // Call delete function
-                            onDismissed: (direction) {
-                              // This is called AFTER confirmDismiss returns true and the item is dismissed from UI
-                              // No need to do anything here as _deleteMeal already handles API call and reload
-                            },
-                            child: ListTile(
-                              leading: Icon(_getMealIcon(meal['meal_type'])),
-                              title: Text(
-                                '${meal['meal_type'] != null ? meal['meal_type'][0].toUpperCase() + meal['meal_type'].substring(1) + ': ' : ''}'
-                                '${meal['meal_name'] ?? 'N/A'}',
-                              ),
-                              subtitle: Text('${meal['calories']} kcal'),
-                              trailing: Row( // Use a Row to place multiple icons
-                                mainAxisSize: MainAxisSize.min, // Keep row compact
-                                children: [
-                                  if (meal['notes'] != null &&
-                                      meal['notes'].toString().isNotEmpty)
-                                    IconButton(
-                                      icon: const Icon(Icons.notes, color: Colors.grey),
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder: (context) => AlertDialog(
-                                            title: const Text('Meal Notes'),
-                                            content: Text(meal['notes']),
-                                            actions: [
-                                              TextButton(
-                                                child: const Text('Close'),
-                                                onPressed: () => Navigator.pop(context),
-                                              )
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  // --- NEW: Edit Icon ---
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
-                                    onPressed: () => _navigateToEditMeal(meal),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Text(
+                              'Meals: $mealsCompleted | Total Kcal: $totalCalories',
+                              style: const TextStyle(fontSize: 14, color: Colors.black54),
+                            ),
+                          ),
+                          trailing: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
+                          children: mealsForDate.map((meal) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2),
+                              child: Dismissible(
+                                key: Key(meal['meal_id']),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                ],
-                              ),
-                              onTap: () {
-                                // Original onTap for notes can remain or be removed if edit icon handles all.
-                                // If notes icon is separate, onTap can be removed.
-                                if (meal['notes'] != null &&
-                                    meal['notes'].toString().isNotEmpty) {
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('Meal Notes'),
-                                      content: Text(meal['notes']),
-                                      actions: [
-                                        TextButton(
-                                          child: const Text('Close'),
-                                          onPressed: () => Navigator.pop(context),
-                                        )
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  child: const Icon(Icons.delete, color: Colors.white),
+                                ),
+                                confirmDismiss: (direction) => _deleteMeal(meal['meal_id']),
+                                child: ListTile(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  leading: CircleAvatar(
+                                    backgroundColor: Colors.blue[50],
+                                    child: Icon(_getMealIcon(meal['meal_type']), color: Colors.blue[700]),
+                                  ),
+                                  title: Row(
+                                    children: [
+                                      Text(
+                                        meal['meal_name'] ?? 'N/A',
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      if (meal['meal_type'] != null)
+                                        Chip(
+                                          label: Text(
+                                            meal['meal_type'][0].toUpperCase() + meal['meal_type'].substring(1),
+                                            style: const TextStyle(fontSize: 12, color: Colors.white),
+                                          ),
+                                          backgroundColor: Colors.blueAccent,
+                                          padding: EdgeInsets.zero,
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                    ],
+                                  ),
+                                  subtitle: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        const WidgetSpan(
+                                          child: Icon(Icons.local_fire_department, size: 16, color: Colors.orange),
+                                        ),
+                                        TextSpan(
+                                          text: '  ${meal['calories']} kcal',
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
                                       ],
                                     ),
-                                  );
-                                }
-                              },
-                            ),
-                          );
-                        }).toList(),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (meal['notes'] != null && meal['notes'].toString().isNotEmpty)
+                                        IconButton(
+                                          icon: const Icon(Icons.notes, color: Colors.grey),
+                                          tooltip: 'View Notes',
+                                          onPressed: () {
+                                            showDialog(
+                                              context: context,
+                                              builder: (context) => AlertDialog(
+                                                title: const Text('Meal Notes'),
+                                                content: Text(meal['notes']),
+                                                actions: [
+                                                  TextButton(
+                                                    child: const Text('Close'),
+                                                    onPressed: () => Navigator.pop(context),
+                                                  )
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, color: Colors.blue),
+                                        tooltip: 'Edit Meal',
+                                        onPressed: () => _navigateToEditMeal(meal),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () {
+                                    if (meal['notes'] != null && meal['notes'].toString().isNotEmpty) {
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('Meal Notes'),
+                                          content: Text(meal['notes']),
+                                          actions: [
+                                            TextButton(
+                                              child: const Text('Close'),
+                                              onPressed: () => Navigator.pop(context),
+                                            )
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     );
                   }).toList(),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _navigateToNewMealLog, // Call the new navigation function
-        tooltip: 'Log a new meal', // Optional tooltip for accessibility
-        child: const Icon(Icons.add), // The plus icon
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _navigateToNewMealLog,
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Log Meal'),
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
