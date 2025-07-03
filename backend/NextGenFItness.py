@@ -1314,7 +1314,7 @@ def get_all_users():
                 P.height,
                 P.weight,
                 P.bmi,
-                P.location,
+                P.location
             FROM
                 User AS U
             LEFT JOIN
