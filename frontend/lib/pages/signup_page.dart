@@ -601,6 +601,11 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(vertical: 16),
               ),
+              onChanged: (value) { // Add this onChanged callback
+                setState(() {
+                  // No specific state change needed here, just force rebuild
+                });
+              },              
             ),
           ),
           SizedBox(height: 40),
