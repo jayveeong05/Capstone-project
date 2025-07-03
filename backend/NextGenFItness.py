@@ -73,7 +73,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -222,6 +222,30 @@ def generate_diet_pref_id():
         return f'DP{numeric_part:03d}'
     else:
         return 'DP001'
+
+@app.route('/validate-allergies', methods=['POST'])
+def validate_allergies():
+    data = request.get_json()
+    allergies = [a.strip().lower() for a in data.get('allergies', [])]
+    
+    if not allergies:
+        return jsonify({'valid': True, 'invalid_allergies': []}), 200
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Create placeholders for SQL query
+    placeholders = ','.join(['?'] * len(allergies))
+    cursor.execute(f"SELECT LOWER(name) FROM Ingredient WHERE LOWER(name) IN ({placeholders})", allergies)
+    valid_allergies = {row[0] for row in cursor.fetchall()}
+    
+    invalid_allergies = [a for a in allergies if a not in valid_allergies]
+    conn.close()
+    
+    return jsonify({
+        'valid': len(invalid_allergies) == 0,
+        'invalid_allergies': invalid_allergies
+    }), 200
     
 @app.route('/signup', methods=['POST'])
 def signup():

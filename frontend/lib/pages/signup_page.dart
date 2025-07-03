@@ -71,9 +71,51 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  Future<bool> _validateAllergies() async {
+    if (_allergy.text.isEmpty) return true;
+    
+    final allergyList = _allergy.text
+        .split(',')
+        .map((a) => a.trim())
+        .where((a) => a.isNotEmpty)
+        .toList();
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/validate-allergies'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'allergies': allergyList}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['valid'] as bool) {
+          return true;
+        } else {
+          setState(() {
+            _responseMessage = "Invalid allergies: ${data['invalid_allergies'].join(', ')}\n"
+                "Please check spelling or contact support";
+          });
+          return false;
+        }
+      }
+    } catch (e) {
+      print('Allergy validation error: $e');
+    }
+    
+    setState(() {
+      _responseMessage = "Failed to validate allergies. Please try again.";
+    });
+    return false;
+  }
+
   Future<void> _signup() async {
     // Validate form before proceeding
     if (!_isAccountFormValid()) {
+      return;
+    }
+    if (!await _validateAllergies()) {
+      setState(() => _isLoading = false);
       return;
     }
 
@@ -855,7 +897,22 @@ class _SignUpPageState extends State<SignUpPage> with SingleTickerProviderStateM
               ),
             ),
           ),
-          SizedBox(height: 40),
+          SizedBox(height: 20), // Reduced spacing
+          
+          // Moved error message here with proper spacing
+          if (_allergy.text.isNotEmpty && _responseMessage.contains('Invalid allergies'))
+            Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text(
+                _responseMessage,
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          
+          // Single next button
           _buildNextButton(
             onPressed: _nextPage,
             color: Colors.amber,
