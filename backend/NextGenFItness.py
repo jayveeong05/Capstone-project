@@ -1785,6 +1785,8 @@ def scan_meal():
             return jsonify({'error': 'user_id is required', 'success': False}), 400
         
         user_id = request.form['user_id']
+        if user_id.isdigit():
+            user_id = f"U{int(user_id):03d}"
         
         # Check if image file is present
         if 'image' not in request.files:
@@ -1861,6 +1863,9 @@ def scan_meal():
 def get_meal_scans(user_id):
     """Get meal scan history for a user"""
     try:
+        if user_id.isdigit():
+            user_id = f"U{int(user_id):03d}"
+            
         limit = int(request.args.get('limit', 50))
         
         if limit > 200:  # Prevent excessive data retrieval

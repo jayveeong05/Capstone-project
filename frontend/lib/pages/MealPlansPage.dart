@@ -93,7 +93,7 @@ class _MealPlansPageState extends State<MealPlansPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Meal Plans'),
+        title: const Text('Meal Library'),
         backgroundColor: Colors.blueAccent,
       ),
       body: Padding(

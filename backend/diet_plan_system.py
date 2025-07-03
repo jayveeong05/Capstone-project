@@ -1471,7 +1471,7 @@ def setup_diet_plan_routes(app, diet_system):
             return jsonify({
                 'success': True,
                 'diet_plans': plans
-            })
+            }), 200
             
         except Exception as e:
             return jsonify({'error': f'Error retrieving diet plans: {str(e)}', 'success': False}), 500

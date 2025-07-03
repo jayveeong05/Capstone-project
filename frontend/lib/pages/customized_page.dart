@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'view_workoutplan_page.dart';
-import 'diet_preference_page.dart';
+import 'diet_plan_page.dart';
 
 class AllPlansPage extends StatefulWidget {
   final int userId;
@@ -49,6 +49,7 @@ class _AllPlansPageState extends State<AllPlansPage> {
         setState(() {
           workoutPlans = workoutData['plans'] ?? [];
           dietPlans = List<Map<String, dynamic>>.from(dietData['diet_plans'] ?? []);
+          print(dietPlans);
         });
       } else {
         setState(() {
@@ -87,14 +88,14 @@ class _AllPlansPageState extends State<AllPlansPage> {
   Widget _buildDietPlanItem(Map<String, dynamic> plan) {
     return Card(
       child: ListTile(
-        title: Text(plan['title'] ?? 'Diet Plan'),
-        subtitle: Text("Calories: ${plan['calories']} kcal"),
+        title: Text(plan['plan_name'] ?? 'Diet Plan'),
+        subtitle: Text("Daily Calories: ${plan['daily_calories']} kcal"),
         trailing: const Icon(Icons.arrow_forward),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => DietPreferencePage(userId: widget.userId.toString()),
+              builder: (context) => DietPlansPage(userId: widget.userId.toString()),
             ),
           );
         },
