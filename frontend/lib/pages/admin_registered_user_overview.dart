@@ -15,7 +15,6 @@ class UserData {
   final double? weight;
   final double? bmi;
   final String? location;
-  final String? profilePicture; // This would typically be a URL or base64 string
 
   UserData({
     required this.userId,
@@ -29,7 +28,6 @@ class UserData {
     this.weight,
     this.bmi,
     this.location,
-    this.profilePicture,
   });
 
   // Factory constructor to create UserData from a JSON map (e.g., from backend)
@@ -47,7 +45,6 @@ class UserData {
       weight: json['weight'] != null ? (json['weight'] as num).toDouble() : null,
       bmi: json['bmi'] != null ? (json['bmi'] as num).toDouble() : null,
       location: json['location'],
-      profilePicture: json['profile_picture'],
     );
   }
 }

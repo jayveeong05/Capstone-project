@@ -73,7 +73,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('NextGenFitness.db')
+    conn = sqlite3.connect('backend/NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -101,7 +101,6 @@ def init_db():
                 weight REAL,
                 bmi REAL,
                 location TEXT,
-                profile_picture TEXT,
                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
 
     # Create Goal table
@@ -222,6 +221,30 @@ def generate_diet_pref_id():
         return f'DP{numeric_part:03d}'
     else:
         return 'DP001'
+
+@app.route('/validate-allergies', methods=['POST'])
+def validate_allergies():
+    data = request.get_json()
+    allergies = [a.strip().lower() for a in data.get('allergies', [])]
+    
+    if not allergies:
+        return jsonify({'valid': True, 'invalid_allergies': []}), 200
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Create placeholders for SQL query
+    placeholders = ','.join(['?'] * len(allergies))
+    cursor.execute(f"SELECT LOWER(name) FROM Ingredient WHERE LOWER(name) IN ({placeholders})", allergies)
+    valid_allergies = {row[0] for row in cursor.fetchall()}
+    
+    invalid_allergies = [a for a in allergies if a not in valid_allergies]
+    conn.close()
+    
+    return jsonify({
+        'valid': len(invalid_allergies) == 0,
+        'invalid_allergies': invalid_allergies
+    }), 200
     
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -529,11 +552,6 @@ def save_profile():
     if not user_id or not full_name:
         return jsonify({'error': 'Missing required fields'}), 400
 
-    profile_picture_file = request.files.get('profile_picture')
-    profile_picture_base64 = None
-    if profile_picture_file:
-        file_bytes = profile_picture_file.read()
-        profile_picture_base64 = base64.b64encode(file_bytes).decode('utf-8')
 
     bmi = None
     if weight and height:
@@ -550,15 +568,15 @@ def save_profile():
 
     if existing_profile:
         cur.execute("""
-            UPDATE Profile SET full_name=?, age=?, gender=?, height=?, weight=?, bmi=?, location=?, profile_picture=?
+            UPDATE Profile SET full_name=?, age=?, gender=?, height=?, weight=?, bmi=?, location=?
             WHERE user_id=?
-        """, (full_name, age, gender, height, weight, bmi, location, profile_picture_base64, user_id))
+        """, (full_name, age, gender, height, weight, bmi, location, user_id))
     else:
         profile_id = generate_profile_id()
         cur.execute("""
-            INSERT INTO Profile (profile_id, user_id, full_name, age, gender, height, weight, bmi, location, profile_picture)
+            INSERT INTO Profile (profile_id, user_id, full_name, age, gender, height, weight, bmi, location, )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (profile_id, user_id, full_name, age, gender, height, weight, bmi, location, profile_picture_base64))
+        """, (profile_id, user_id, full_name, age, gender, height, weight, bmi, location))
 
     conn.commit()
     conn.close()
@@ -1296,8 +1314,7 @@ def get_all_users():
                 P.height,
                 P.weight,
                 P.bmi,
-                P.location,
-                P.profile_picture
+                P.location
             FROM
                 User AS U
             LEFT JOIN
@@ -1502,9 +1519,10 @@ def delete_user(user_id):
 
         # Tables with user_id as foreign key, ordered for dependency
         tables_to_delete_from = [
-            "ChatbotInteraction", "Feedback", "FeedbackResponse", "Goal",
-            "MealScan", "Notification", "ProgressLog", "Report", "SystemLog", 
-            "UserDietPlan", "UserDietPreference", "WorkoutPlan", "VoiceLog", "Profile",
+            "ChatbotInteraction", "DietPlan", "ExerciseStatus", "Feedback",
+            "FeedbackResponse", "Goal", "LoggedMeal", "Reminder",
+            "MealScans", "notifications", "ProgressLog", "Report", "SystemLog", 
+            "UserDietPlanProgress", "UserDietPreference", "WorkoutPlan", "VoiceLog", "Profile",
             # RecipeLibrary does not seem to have a direct user_id FK, assuming it's managed differently
             # Reminder might be associated, if so add it here
         ]
@@ -1767,6 +1785,8 @@ def scan_meal():
             return jsonify({'error': 'user_id is required', 'success': False}), 400
         
         user_id = request.form['user_id']
+        if user_id.isdigit():
+            user_id = f"U{int(user_id):03d}"
         
         # Check if image file is present
         if 'image' not in request.files:
@@ -1843,6 +1863,9 @@ def scan_meal():
 def get_meal_scans(user_id):
     """Get meal scan history for a user"""
     try:
+        if user_id.isdigit():
+            user_id = f"U{int(user_id):03d}"
+            
         limit = int(request.args.get('limit', 50))
         
         if limit > 200:  # Prevent excessive data retrieval
@@ -2725,7 +2748,6 @@ def update_profile(user_id):
     location = data.get('location')
     allergies = data.get('allergies')
     dietary_goal = data.get('dietary_goal')
-    profile_picture_base64 = data.get('profile_picture')
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2766,9 +2788,6 @@ def update_profile(user_id):
             if location is not None:
                 profile_update_fields.append("location = ?")
                 profile_update_values.append(location)
-            if profile_picture_base64 is not None:
-                profile_update_fields.append("profile_picture = ?")
-                profile_update_values.append(profile_picture_base64)
             
             if profile_update_fields:
                 profile_update_query = f"UPDATE Profile SET {', '.join(profile_update_fields)} WHERE user_id = ?"
@@ -2778,9 +2797,9 @@ def update_profile(user_id):
             # If profile does not exist, insert it (should not happen for existing users)
             profile_id = generate_profile_id()
             cur.execute("""
-                INSERT INTO Profile (profile_id, user_id, full_name, age, height, weight, bmi, location, profile_picture)
+                INSERT INTO Profile (profile_id, user_id, full_name, age, height, weight, bmi, location)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (profile_id, user_id, full_name, int(age), float(height), float(weight), bmi, location, profile_picture_base64))
+            """, (profile_id, user_id, full_name, int(age), float(height), float(weight), bmi, location))
 
         # Update UserDietPreference table
         cur.execute("SELECT * FROM UserDietPreference WHERE user_id = ?", (user_id,))
@@ -2861,7 +2880,7 @@ def get_user_profile(user_id):
         # Fetch profile data
         cursor.execute("""
             SELECT 
-                p.full_name, p.age, p.gender, p.height, p.weight, p.bmi, p.location, p.profile_picture,
+                p.full_name, p.age, p.gender, p.height, p.weight, p.bmi, p.location, 
                 ud.dietary_goal, ud.allergies,
                 u.username
             FROM Profile p
@@ -2888,7 +2907,6 @@ def get_user_profile(user_id):
             'weight': profile_data['weight'],
             'bmi': profile_data['bmi'],
             'location': profile_data['location'],
-            'profile_picture': profile_data['profile_picture'],
             'allergies': profile_data['allergies'],
             'dietary_goal': profile_data['dietary_goal'],
             'goal_type': goal_data['goal_type'] if goal_data else None,

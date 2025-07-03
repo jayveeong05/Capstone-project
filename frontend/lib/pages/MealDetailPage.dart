@@ -18,6 +18,8 @@ class MealDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // --- IMAGE SECTION (hidden, but kept in code for future use) ---
+            /*
             Container(
               height: 140,
               decoration: BoxDecoration(
@@ -37,6 +39,7 @@ class MealDetailPage extends StatelessWidget {
                   : null,
             ),
             const SizedBox(height: 22),
+            */
             Card(
               elevation: 5,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -112,6 +115,8 @@ class MealDetailPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 36),
+            // --- START COOKING BUTTON (hidden, but kept in code for future use) ---
+            /*
             ElevatedButton.icon(
               icon: const Icon(Icons.play_arrow),
               label: const Text('Start Cooking', style: TextStyle(fontSize: 18)),
@@ -130,6 +135,7 @@ class MealDetailPage extends StatelessWidget {
                 );
               },
             ),
+            */
           ],
         ),
       ),

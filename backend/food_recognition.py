@@ -1,4 +1,5 @@
 import os
+import asyncio
 
 # Windows fix for Clarifai SDK expecting HOME env var
 if 'HOME' not in os.environ and 'USERPROFILE' in os.environ:
@@ -26,6 +27,13 @@ class FoodRecognition:
         try:
             with open(image_path, "rb") as f:
                 file_bytes = f.read()
+
+            # --- Ensure event loop exists for Clarifai SDK ---
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
             response = self.model.predict_by_bytes(file_bytes)
 

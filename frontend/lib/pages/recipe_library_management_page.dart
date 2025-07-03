@@ -282,12 +282,15 @@ class _RecipeLibraryManagementPageState extends State<RecipeLibraryManagementPag
                   ),
                    TextFormField(
                     controller: _nutritionController,
-                    decoration: const InputDecoration(labelText: 'Nutrition Info (JSON format)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Nutrition Info (JSON format)',
+                      hintText: '{"calories": 250, "protein": 10, "carbs": 30, "fat": 8}',
+                    ),
                   ),
-                   TextFormField(
-                    controller: _imageUrlController,
-                    decoration: const InputDecoration(labelText: 'Image URL'),
-                  ),
+                  //  TextFormField(
+                  //   controller: _imageUrlController,
+                  //   decoration: const InputDecoration(labelText: 'Image URL'),
+                  // ),
                 ],
               ),
             ),
@@ -366,7 +369,6 @@ class _RecipeLibraryManagementPageState extends State<RecipeLibraryManagementPag
           builder: (context) {
             // Use DefaultTabController.of(context) which is guaranteed to be non-null here
             final tabController = DefaultTabController.of(context);
-             if (tabController == null) return Container(); // Should not happen
             return FloatingActionButton(
               onPressed: () {
                 if (tabController.index == 0) {

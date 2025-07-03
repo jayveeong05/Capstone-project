@@ -86,7 +86,13 @@ class _DietPlansPageState extends State<DietPlansPage> {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Diet Plan')),
+      appBar: AppBar(
+        title: const Text('My Diet Plan'),
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+        elevation: 1,
+      ),
+      backgroundColor: Colors.grey[100],
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -96,84 +102,115 @@ class _DietPlansPageState extends State<DietPlansPage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text('No diet plan found.'),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _openGenerateDietPlan,
-                            child: const Text('Generate Diet Plan'),
+                        Icon(Icons.restaurant_menu, size: 60, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No diet plan found.',
+                          style: TextStyle(fontSize: 18, color: Colors.black54),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: _openGenerateDietPlan,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Generate Diet Plan'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[50],
+                            foregroundColor: Colors.blue[700],
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                            textStyle: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     )
+                  )
                   : RefreshIndicator(
                       onRefresh: _fetchDietPlans,
                       child: ListView(
                         padding: const EdgeInsets.all(16),
                         children: [
-                          Text(
+                          const Text(
                             'Active Diet Plan',
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87),
                           ),
                           const SizedBox(height: 8),
                           if (activePlan.isNotEmpty)
                             Card(
                               color: Colors.green[50],
+                              elevation: 3,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               child: ListTile(
-                                title: Text(activePlan['plan_name'] ?? 'My Diet Plan'),
+                                leading: const Icon(Icons.check_circle, color: Colors.green, size: 32),
+                                title: Text(
+                                  activePlan['plan_name'] ?? 'My Diet Plan',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
                                 subtitle: Text(
-                                    'Start: ${activePlan['start_date']} | End: ${activePlan['end_date']}'),
+                                  'Start: ${activePlan['start_date']} | End: ${activePlan['end_date']}',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
                                 trailing: Chip(
                                   label: const Text('Active'),
                                   backgroundColor: Colors.green.withOpacity(0.2),
-                                  labelStyle:
-                                      const TextStyle(color: Colors.green),
+                                  labelStyle: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
                                 ),
-                                onTap: () => _openDietPlanDetails(
-                                    activePlan['diet_plan_id']),
+                                onTap: () => _openDietPlanDetails(activePlan['diet_plan_id']),
                               ),
                             )
                           else
                             const Text('No active diet plan.'),
-                          const SizedBox(height: 24),
-                          Text(
+                          const SizedBox(height: 28),
+                          const Text(
                             'Archived Plans',
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87),
                           ),
                           const SizedBox(height: 8),
                           if (archivedPlans.isEmpty)
-                            const Text('No archived plans.'),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16.0),
+                              child: Text('No archived plans.', style: TextStyle(color: Colors.grey[600])),
+                            ),
                           ...archivedPlans.map((plan) {
-                            final status =
-                                plan['user_status'] ?? plan['status'] ?? 'Unknown';
+                            final status = plan['user_status'] ?? plan['status'] ?? 'Unknown';
                             final statusColor = {
                               'Finished': Colors.red,
                               'Replaced': Colors.grey,
                               'Cancelled': Colors.orange,
-                            }[status] ??
-                                Colors.blueGrey;
+                            }[status] ?? Colors.blueGrey;
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 8),
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               child: ListTile(
-                                title:
-                                    Text(plan['plan_name'] ?? 'My Diet Plan'),
+                                leading: Icon(Icons.archive, color: statusColor, size: 28),
+                                title: Text(plan['plan_name'] ?? 'My Diet Plan', style: const TextStyle(fontWeight: FontWeight.w600)),
                                 subtitle: Text(
-                                    'Start: ${plan['start_date']} | End: ${plan['end_date']}'),
+                                  'Start: ${plan['start_date']} | End: ${plan['end_date']}',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
                                 trailing: Chip(
                                   label: Text(status),
                                   backgroundColor: statusColor.withOpacity(0.2),
-                                  labelStyle:
-                                      TextStyle(color: statusColor),
+                                  labelStyle: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
                                 ),
-                                onTap: () => _openDietPlanDetails(
-                                    plan['diet_plan_id']),
+                                onTap: () => _openDietPlanDetails(plan['diet_plan_id']),
                               ),
                             );
                           }).toList(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 32),
                           ElevatedButton.icon(
                             onPressed: _openGenerateDietPlan,
                             icon: const Icon(Icons.add),
                             label: const Text('Create New Plan'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[50],
+                              foregroundColor: Colors.blue[700],
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                            ),
                           ),
                         ],
                       ),
@@ -200,7 +237,13 @@ class DietPlanDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Diet Plan Details')),
+      appBar: AppBar(
+        title: const Text('Diet Plan Details'),
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
+        elevation: 1,
+      ),
+      backgroundColor: Colors.grey[100],
       body: FutureBuilder<Map<String, dynamic>>(
         future: fetchDietPlanDetails(),
         builder: (context, snapshot) {
@@ -221,25 +264,50 @@ class DietPlanDetailPage extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(diet['plan_name'] ?? '', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text('Description: ${diet['description'] ?? 'No description'}', style: const TextStyle(color: Colors.blueGrey)),
-              Text('Status: $status'),
-              Text('Calories/day: ${diet['daily_calories']}'),
-              Text('Protein: ${diet['protein_grams']}g | Carbs: ${diet['carbs_grams']}g | Fat: ${diet['fat_grams']}g | Fiber: ${diet['fiber_grams']}g'),
-              Text('Duration: ${diet['duration_days']} days'),
-              Text('Start Date: $startDate'),
-              Text('End Date: $endDate'),
-              const Divider(height: 24),
+              Card(
+                elevation: 3,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                child: Padding(
+                  padding: const EdgeInsets.all(18.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(diet['plan_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.blueAccent)),
+                      const SizedBox(height: 8),
+                      Text('Description: ${diet['description'] ?? 'No description'}', style: const TextStyle(color: Colors.blueGrey)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Chip(
+                            label: Text(status),
+                            backgroundColor: Colors.green.withOpacity(0.2),
+                            labelStyle: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 12),
+                          Text('Duration: ${diet['duration_days']} days'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Calories/day: ${diet['daily_calories']}'),
+                      Text('Protein: ${diet['protein_grams']}g | Carbs: ${diet['carbs_grams']}g | Fat: ${diet['fat_grams']}g | Fiber: ${diet['fiber_grams']}g'),
+                      Text('Start Date: $startDate'),
+                      Text('End Date: $endDate'),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 32),
               ...mealPlan.entries.map((entry) {
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 8),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: ExpansionTile(
-                    title: Text(entry.key),
+                    title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold)),
                     children: (entry.value as List).map<Widget>((meal) {
                       final recipe = meal['recipe'];
                       return ListTile(
-                        title: Text('${meal['meal_type']}: ${recipe['title']}'),
+                        title: Text('${meal['meal_type']}: ${recipe['title']}', style: const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -262,10 +330,10 @@ class DietPlanDetailPage extends StatelessWidget {
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              Text('Ingredients:', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                              const Text('Ingredients:', style: TextStyle(fontWeight: FontWeight.bold)),
                                               Text(recipe['ingredients'] ?? 'N/A'),
                                               const SizedBox(height: 10),
-                                              Text('Instructions:', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                              const Text('Instructions:', style: TextStyle(fontWeight: FontWeight.bold)),
                                               Text(recipe['instructions'] ?? 'N/A'),
                                             ],
                                           ),
