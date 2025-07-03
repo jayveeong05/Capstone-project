@@ -101,7 +101,6 @@ def init_db():
                 weight REAL,
                 bmi REAL,
                 location TEXT,
-                profile_picture TEXT,
                 FOREIGN KEY (user_id) REFERENCES User(user_id))''')
 
     # Create Goal table
@@ -553,11 +552,6 @@ def save_profile():
     if not user_id or not full_name:
         return jsonify({'error': 'Missing required fields'}), 400
 
-    profile_picture_file = request.files.get('profile_picture')
-    profile_picture_base64 = None
-    if profile_picture_file:
-        file_bytes = profile_picture_file.read()
-        profile_picture_base64 = base64.b64encode(file_bytes).decode('utf-8')
 
     bmi = None
     if weight and height:
@@ -574,15 +568,15 @@ def save_profile():
 
     if existing_profile:
         cur.execute("""
-            UPDATE Profile SET full_name=?, age=?, gender=?, height=?, weight=?, bmi=?, location=?, profile_picture=?
+            UPDATE Profile SET full_name=?, age=?, gender=?, height=?, weight=?, bmi=?, location=?
             WHERE user_id=?
-        """, (full_name, age, gender, height, weight, bmi, location, profile_picture_base64, user_id))
+        """, (full_name, age, gender, height, weight, bmi, location, user_id))
     else:
         profile_id = generate_profile_id()
         cur.execute("""
-            INSERT INTO Profile (profile_id, user_id, full_name, age, gender, height, weight, bmi, location, profile_picture)
+            INSERT INTO Profile (profile_id, user_id, full_name, age, gender, height, weight, bmi, location, )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (profile_id, user_id, full_name, age, gender, height, weight, bmi, location, profile_picture_base64))
+        """, (profile_id, user_id, full_name, age, gender, height, weight, bmi, location))
 
     conn.commit()
     conn.close()
@@ -1321,7 +1315,6 @@ def get_all_users():
                 P.weight,
                 P.bmi,
                 P.location,
-                P.profile_picture
             FROM
                 User AS U
             LEFT JOIN
@@ -2749,7 +2742,6 @@ def update_profile(user_id):
     location = data.get('location')
     allergies = data.get('allergies')
     dietary_goal = data.get('dietary_goal')
-    profile_picture_base64 = data.get('profile_picture')
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2790,9 +2782,6 @@ def update_profile(user_id):
             if location is not None:
                 profile_update_fields.append("location = ?")
                 profile_update_values.append(location)
-            if profile_picture_base64 is not None:
-                profile_update_fields.append("profile_picture = ?")
-                profile_update_values.append(profile_picture_base64)
             
             if profile_update_fields:
                 profile_update_query = f"UPDATE Profile SET {', '.join(profile_update_fields)} WHERE user_id = ?"
@@ -2802,9 +2791,9 @@ def update_profile(user_id):
             # If profile does not exist, insert it (should not happen for existing users)
             profile_id = generate_profile_id()
             cur.execute("""
-                INSERT INTO Profile (profile_id, user_id, full_name, age, height, weight, bmi, location, profile_picture)
+                INSERT INTO Profile (profile_id, user_id, full_name, age, height, weight, bmi, location)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (profile_id, user_id, full_name, int(age), float(height), float(weight), bmi, location, profile_picture_base64))
+            """, (profile_id, user_id, full_name, int(age), float(height), float(weight), bmi, location))
 
         # Update UserDietPreference table
         cur.execute("SELECT * FROM UserDietPreference WHERE user_id = ?", (user_id,))
@@ -2885,7 +2874,7 @@ def get_user_profile(user_id):
         # Fetch profile data
         cursor.execute("""
             SELECT 
-                p.full_name, p.age, p.gender, p.height, p.weight, p.bmi, p.location, p.profile_picture,
+                p.full_name, p.age, p.gender, p.height, p.weight, p.bmi, p.location, 
                 ud.dietary_goal, ud.allergies,
                 u.username
             FROM Profile p
@@ -2912,7 +2901,6 @@ def get_user_profile(user_id):
             'weight': profile_data['weight'],
             'bmi': profile_data['bmi'],
             'location': profile_data['location'],
-            'profile_picture': profile_data['profile_picture'],
             'allergies': profile_data['allergies'],
             'dietary_goal': profile_data['dietary_goal'],
             'goal_type': goal_data['goal_type'] if goal_data else None,

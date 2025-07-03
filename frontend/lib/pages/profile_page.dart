@@ -84,7 +84,6 @@ class _ProfilePageState extends State<ProfilePage> {
       _allergiesController.text = prefs.getString('allergies') ?? '';
       _fitnessGoalsController.text = prefs.getString('dietary_goal') ?? '';
 
-      _profilePictureBase64 = prefs.getString('profile_picture');
 
       _isLoading = false;
     });
@@ -110,7 +109,6 @@ class _ProfilePageState extends State<ProfilePage> {
           _locationController.text = data['location'] ?? '';
           _allergiesController.text = data['allergies'] ?? '';
           _fitnessGoalsController.text = data['dietary_goal'] ?? '';
-          _profilePictureBase64 = data['profile_picture']; 
         });
         SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setString('username', data['username'] ?? 'User');
@@ -120,7 +118,6 @@ class _ProfilePageState extends State<ProfilePage> {
         await prefs.setString('location', data['location'] ?? '');
         await prefs.setString('allergies', data['allergies'] ?? '');
         await prefs.setString('dietary_goal', data['dietary_goal'] ?? '');
-        await prefs.setString('profile_picture', data['profile_picture'] ?? '');
       } else {
         _showSnackBar('Failed to load profile data from backend.', Colors.red);
       }
@@ -154,7 +151,6 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setString('location', _locationController.text);
     await prefs.setString('allergies', _allergiesController.text);
     await prefs.setString('dietary_goal', _fitnessGoalsController.text);
-    await prefs.setString('profile_picture', _profilePictureBase64 ?? '');
 
     // Now, update the backend
     if (_userId != null) {
@@ -172,7 +168,6 @@ class _ProfilePageState extends State<ProfilePage> {
             'location': _locationController.text,
             'allergies': _allergiesController.text,
             'dietary_goal': _fitnessGoalsController.text,
-            'profile_picture': _profilePictureBase64,
           }),
         );
 
