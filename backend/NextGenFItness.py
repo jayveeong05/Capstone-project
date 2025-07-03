@@ -1519,9 +1519,10 @@ def delete_user(user_id):
 
         # Tables with user_id as foreign key, ordered for dependency
         tables_to_delete_from = [
-            "ChatbotInteraction", "Feedback", "FeedbackResponse", "Goal",
-            "MealScan", "Notification", "ProgressLog", "Report", "SystemLog", 
-            "UserDietPlan", "UserDietPreference", "WorkoutPlan", "VoiceLog", "Profile",
+            "ChatbotInteraction", "DietPlan", "ExerciseStatus", "Feedback",
+            "FeedbackResponse", "Goal", "LoggedMeal", "Reminder",
+            "MealScans", "notifications", "ProgressLog", "Report", "SystemLog", 
+            "UserDietPlanProgress", "UserDietPreference", "WorkoutPlan", "VoiceLog", "Profile",
             # RecipeLibrary does not seem to have a direct user_id FK, assuming it's managed differently
             # Reminder might be associated, if so add it here
         ]
