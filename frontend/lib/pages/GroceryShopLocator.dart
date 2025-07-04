@@ -3,8 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
-import 'dart:math';
+
 
 class GroceryShopLocator extends StatefulWidget {
   const GroceryShopLocator({super.key});
@@ -139,59 +138,59 @@ class _GroceryShopLocatorState extends State<GroceryShopLocator> {
     }
   }
 
-Future<void> _getDirections() async {
-  if (_currentLocation == null || _selectedLocation == null) return;
+// Future<void> _getDirections() async {
+//   if (_currentLocation == null || _selectedLocation == null) return;
 
-  setState(() => _isLoading = true);
-  try {
-    final polylinePoints = PolylinePoints();
-    final result = await polylinePoints.getRouteBetweenCoordinates(
-      request: PolylineRequest(
-        origin: PointLatLng(_currentLocation!.latitude!, _currentLocation!.longitude!),
-        destination: PointLatLng(_selectedLocation!.latitude, _selectedLocation!.longitude),
-        mode: TravelMode.driving, // You can specify travel mode (e.g., TravelMode.walking)
-      ),
-      googleApiKey: _apiKey,
-    );
+//   setState(() => _isLoading = true);
+//   try {
+//     final polylinePoints = PolylinePoints();
+//     final result = await polylinePoints.getRouteBetweenCoordinates(
+//       request: PolylineRequest(
+//         origin: PointLatLng(_currentLocation!.latitude!, _currentLocation!.longitude!),
+//         destination: PointLatLng(_selectedLocation!.latitude, _selectedLocation!.longitude),
+//         mode: TravelMode.driving, // You can specify travel mode (e.g., TravelMode.walking)
+//       ),
+//       googleApiKey: _apiKey,
+//     );
 
-    if (result.points.isNotEmpty) {
-      _polylines.clear();
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId('directions'),
-          color: Colors.blue,
-          width: 5,
-          points: result.points
-              .map((point) => LatLng(point.latitude, point.longitude))
-              .toList(),
-        ),
-      );
+//     if (result.points.isNotEmpty) {
+//       _polylines.clear();
+//       _polylines.add(
+//         Polyline(
+//           polylineId: const PolylineId('directions'),
+//           color: Colors.blue,
+//           width: 5,
+//           points: result.points
+//               .map((point) => LatLng(point.latitude, point.longitude))
+//               .toList(),
+//         ),
+//       );
 
-      final bounds = LatLngBounds(
-        southwest: LatLng(
-          min(_currentLocation!.latitude!, _selectedLocation!.latitude),
-          min(_currentLocation!.longitude!, _selectedLocation!.longitude),
-        ),
-        northeast: LatLng(
-          max(_currentLocation!.latitude!, _selectedLocation!.latitude),
-          max(_currentLocation!.longitude!, _selectedLocation!.longitude),
-        ),
-      );
+//       final bounds = LatLngBounds(
+//         southwest: LatLng(
+//           min(_currentLocation!.latitude!, _selectedLocation!.latitude),
+//           min(_currentLocation!.longitude!, _selectedLocation!.longitude),
+//         ),
+//         northeast: LatLng(
+//           max(_currentLocation!.latitude!, _selectedLocation!.latitude),
+//           max(_currentLocation!.longitude!, _selectedLocation!.longitude),
+//         ),
+//       );
 
-      _mapController.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No route found')),
-      );
-    }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error getting directions: $e')),
-    );
-  } finally {
-    setState(() => _isLoading = false);
-  }
-}
+//       _mapController.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+//     } else {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(content: Text('No route found')),
+//       );
+//     }
+//   } catch (e) {
+//     ScaffoldMessenger.of(context).showSnackBar(
+//       SnackBar(content: Text('Error getting directions: $e')),
+//     );
+//   } finally {
+//     setState(() => _isLoading = false);
+//   }
+// }
 
   @override
   Widget build(BuildContext context) {
@@ -278,14 +277,6 @@ Future<void> _getDirections() async {
               ],
             ),
           ),
-          if (_selectedLocation != null)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: ElevatedButton(
-                onPressed: _getDirections,
-                child: const Text('Get Directions'),
-              ),
-            ),
         ],
       ),
     );

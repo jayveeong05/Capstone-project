@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'VoiceLog.dart';
 
 class ChatbotPage extends StatefulWidget {
   final String userId;
@@ -110,6 +111,11 @@ class _ChatbotPageState extends State<ChatbotPage> {
                     contentPadding: EdgeInsets.symmetric(horizontal: 16),
                   ),
                 )),
+                VoiceLog(onResult: (resultText) {
+                  _controller.text = resultText;
+                  _sendMessage(resultText);
+                  _controller.clear();
+                }),
                 SizedBox(width: 8),
                 CircleAvatar(
                   backgroundColor: Theme.of(context).primaryColor,
