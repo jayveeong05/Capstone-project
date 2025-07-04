@@ -520,7 +520,7 @@ Future<void> _toggleSystemStatus(bool disable) async {
             },
             {'name': 'User Fitness Progress Data Analytics', 'onTap': () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => GlobalDashboard()),
+                MaterialPageRoute(builder: (context) => AnalyticsDashboard()),
               ),},
             {'name': 'User Dietary Habit Data Analytics', 'onTap': () => Navigator.push(
                 context,
