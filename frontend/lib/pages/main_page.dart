@@ -900,10 +900,6 @@ Future<void> _fetchUserPlansWithProgress() async {
                       );
                     },
                   ),
-                  _buildQuickActionButton(Icons.mic, 'Voice Log', () {
-                    // TODO: Activate Voice Logging
-                    print('Activate Voice Log');
-                  }),
                   _buildQuickActionButton(Icons.camera_alt, 'Meal Scan', () async {
                     String? userId = await _getUserId();
                     if (userId != null) {
