@@ -14,7 +14,6 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'customized_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -50,7 +49,7 @@ class _MainPageState extends State<MainPage> {
   Map<String, dynamic>? _dietSummary;
   bool _isLoadingDietSummary = true;
   String? _userId;
-
+  int? planId;
 //   void _debugSharedPreferences() async {
 //   SharedPreferences prefs = await SharedPreferences.getInstance();
 //   final keys = prefs.getKeys();
@@ -76,6 +75,19 @@ class _MainPageState extends State<MainPage> {
     _triggerDailyReminder();
     _setRandomMotivationalMessage();
   }
+
+Future<void> updateWorkoutProgress(int planId) async {
+  final response = await http.post(
+    Uri.parse('http://10.0.2.2:5000/check_workout_progress/$planId'),
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    print("✅ Progress updated: ${data['progress']}%");
+  } else {
+    print("❌ Failed to update progress: ${response.body}");
+  }
+}
   // Function to load the username from SharedPreferences
   Future<void> _loadUsernameAndUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -104,7 +116,6 @@ void _launchYouTube(String url) async {
        }
   }
 
-  
   // Function to set a random motivational message
   void _setRandomMotivationalMessage() {
     final _random = Random();
@@ -458,6 +469,7 @@ void _showNotifications(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
   final userId = prefs.getInt('user_id');
   if (userId == null) return;
+
   final formattedUserId = 'U${userId.toString().padLeft(3, '0')}';
   final response = await http.get(
     Uri.parse('http://10.0.2.2:5000/notifications/$formattedUserId'),
@@ -471,8 +483,6 @@ void _showNotifications(BuildContext context) async {
   }
 
   final List<dynamic> notifications = json.decode(response.body);
-
-  // Filter to show only unchecked notifications
   final List<dynamic> unchecked = notifications.where((n) => n['checked'] == 0).toList();
 
   if (unchecked.isEmpty) {
@@ -515,74 +525,56 @@ void _showNotifications(BuildContext context) async {
                     children: [
                       if (notif['details'] != null)
                         Text(notif['details'], style: const TextStyle(fontSize: 14)),
-                      Text("📅 ${notif['created_at']}"),
+                      Text("📅 ${notif['date']}"),
                     ],
                   ),
                   trailing: ElevatedButton(
-                        onPressed: () async {
-                          final prefs = await SharedPreferences.getInstance();
-                          final userId = prefs.getInt('user_id');
-                          final exerciseId = notif['exercise_id'];  // <-- make sure this exists
-                          final selectedDate = notif['date'];  
-                          if (userId == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("User ID not found.")),
-                            );
-                            return;
-                          }
+                    onPressed: () async {
+                      final notificationId = notif['notification_id'];
+                      final type = notif['type'];
 
-                          final userIdStr = "U${userId.toString().padLeft(3, '0')}";
-                          // 1. Mark exercise as completed
-                          final markStatusResponse = await http.post(
-                            Uri.parse('http://10.0.2.2:5000/mark-exercise-status/$userIdStr'),
-                            headers: {'Content-Type': 'application/json'},
-                            body: jsonEncode({
+                      Uri uri = Uri.parse('http://10.0.2.2:5000/handle-notification/$notificationId');
+                      http.Response response;
+
+                      if (type == 'daily reminder') {
+                        response = await http.post(
+                          uri,
+                          headers: {'Content-Type': 'application/json'},
+                          body: jsonEncode({
                             "status": "completed",
                             "plan_id": notif['plan_id'],
-                            "exercise_id": exerciseId,
-                            "date": selectedDate,
+                            "exercise_id": notif['exercise_id'],
+                            "date": notif['date'],
                           }),
-                          );
+                        );
+                      } else {
+                        // No body for feedback
+                        response = await http.post(uri); // ✅ FIXED: no headers, no body
+                      }
 
-                          if (markStatusResponse.statusCode == 200) {
-                            // 2. Mark notification as checked
-                            final checkNotifResponse = await http.post(
-                              Uri.parse('http://10.0.2.2:5000/notifications/check/${notif['notification_id']}'),
-                            );
-
-                            if (checkNotifResponse.statusCode == 200) {
-                              // 3. Optionally update overall progress
-                              final planId = notif['plan_id'];
-                              if (planId != null) {
-                                await http.post(
-                                  Uri.parse('http://10.0.2.2:5000/check_workout_progress/$planId'),
-                                );
-                              }
-
-                              Navigator.pop(context); // Close modal
-                              _showNotifications(context); // Refresh
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("❌ Failed to mark notification as checked")),
-                              );
-                            }
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("❌ Failed to mark exercise as completed")),
-                            );
-                          }
-                        },
-                      child: const Text("Check"),
-                    ),
+                      if (response.statusCode == 200) {
+                        Navigator.pop(context);
+                        _showNotifications(context); // Refresh list
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("✅ Notification handled.")),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("❌ Failed: ${response.statusCode}")),
+                        );
+                      }
+                    },
+                    child: const Text("Check"),
                   ),
-                );
-              }).toList(),
-            ],
-          ),
-        );
-      },
-    );
-  }
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      );
+    },
+  );
+}
 
 int? _selectedPlanId;
 List<Map<String, dynamic>> _userPlans = [];
@@ -600,7 +592,6 @@ Future<void> _fetchUserPlansWithProgress() async {
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-
       final plans = List<Map<String, dynamic>>.from(data['plans']);
 
       setState(() {
@@ -611,6 +602,12 @@ Future<void> _fetchUserPlansWithProgress() async {
           _selectedPlanId = plans.first['plan_id'];
         }
       });
+
+      // ✅ Loop through all plans and update their progress
+      for (var plan in plans) {
+        final planId = plan['plan_id'];
+        await updateWorkoutProgress(planId);
+      }
     } else {
       throw Exception('Failed to fetch workout plans. Status: ${response.statusCode}');
     }
@@ -1045,30 +1042,14 @@ Future<void> _fetchUserPlansWithProgress() async {
             print('Navigated to Home');
             break;
 
-          case 1: // Customize
-            print('Navigated to Customize');
-            () async {
-              SharedPreferences prefs = await SharedPreferences.getInstance();
-              int? userId = prefs.getInt('user_id');
-
-              if (userId != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AllPlansPage(userId: userId),
-                  ),
-                );
-              }
-            }(); // ← Notice the () at the end to call the function
-            break;
-            case 2: // Progress
+            case 1: // Progress
               // TODO: Navigate to Detailed Progress Tracking page
               print('Navigated to AI Chatbot');
               Navigator.push(context, MaterialPageRoute(
                 builder: (context) => ChatbotPage(userId: 'user123'), // Replace with actual user ID
               ));
               break;
-            case 3: // groceryLocator (aligned with Grocery Locator in this case)
+            case 2: // groceryLocator (aligned with Grocery Locator in this case)
               print('Navigated to groceryLocator');
               Navigator.of(context).pushNamed('/groceryLocator'); // Assuming '/groceryLocator' route
               break;
@@ -1076,7 +1057,6 @@ Future<void> _fetchUserPlansWithProgress() async {
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.tune_outlined), activeIcon: Icon(Icons.tune), label: 'Customize'), // Changed label to 'Customize', and icon to tune_outlined/tune
           BottomNavigationBarItem(icon: Icon(Icons.chat_outlined), activeIcon: Icon(Icons.chat), label: 'AI Chatbot'),
           BottomNavigationBarItem(icon: Icon(Icons.location_on_outlined), activeIcon: Icon(Icons.location_on), label: 'Grocery Locator'),
         ],

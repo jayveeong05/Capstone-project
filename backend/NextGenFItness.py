@@ -73,7 +73,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
 def get_db_connection():
-    conn = sqlite3.connect('backend/NextGenFitness.db')
+    conn = sqlite3.connect('NextGenFitness.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -1128,53 +1128,97 @@ def delete_exercise(exercise_id):
 @app.route('/save-custom-plan', methods=['POST'])
 def save_custom_plan():
     data = request.get_json()
-
     user_id = data.get('user_id')
     exercise_ids = data.get('exercise_ids', [])
-    duration = data.get('duration', 3)  # default to 3 months
+    duration_months = data.get('duration', 3)
+    start_date_str = data.get('start_date')
 
-    if not user_id or not exercise_ids:
-        return jsonify({"error": "Missing user_id or exercise_ids"}), 400
+    if not user_id or not exercise_ids or not start_date_str:
+        return jsonify({"error": "Missing user_id, exercise_ids or start_date"}), 400
 
     try:
+        # Parse the start date
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({'error': 'Invalid start_date format. Use YYYY-MM-DD'}), 400
+
+        # Workout plan logic
+        exercises_per_day = 3
+        total_workout_days = duration_months * 4 * 3  # 3 workout days/week × 4 weeks/month
+
+        total_exercises_needed = total_workout_days * exercises_per_day
+
+        # Repeat selected exercises if not enough
+        repeated_exercises = []
+        while len(repeated_exercises) < total_exercises_needed:
+            repeated_exercises.extend(exercise_ids)
+        repeated_exercises = repeated_exercises[:total_exercises_needed]
+
+        # DB setup
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Insert new workout plan
+        # Insert WorkoutPlan
         cursor.execute('''
             INSERT INTO WorkoutPlan (user_id, duration_months, created_at)
             VALUES (?, ?, ?)
-        ''', (user_id, duration, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        ''', (user_id, duration_months, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
         conn.commit()
-
         plan_id = cursor.lastrowid
 
-        # Settings for custom distribution
-        exercises_per_day = 3
-        total_days = (len(exercise_ids) + exercises_per_day - 1) // exercises_per_day
-        start_date = datetime.now().date()
+        # Distribute across days
+        plan_by_dates = {}
+        for day_index in range(total_workout_days):
+            workout_date = start_date + timedelta(days=day_index * 2)  # every 2 days
+            formatted_date = workout_date.strftime("%Y-%m-%d")
 
-        for day_index in range(total_days):
-            target_date = start_date + timedelta(days=day_index)
             for i in range(exercises_per_day):
                 exercise_index = day_index * exercises_per_day + i
-                if exercise_index >= len(exercise_ids):
-                    break
-                exercise_id = exercise_ids[exercise_index]
+                exercise_id = repeated_exercises[exercise_index]
 
                 cursor.execute('''
                     INSERT INTO WorkoutPlanExercise (plan_id, Exercise_ID, date)
                     VALUES (?, ?, ?)
-                ''', (plan_id, exercise_id, target_date.strftime('%Y-%m-%d')))
+                ''', (plan_id, exercise_id, formatted_date))
+
+                if formatted_date not in plan_by_dates:
+                    plan_by_dates[formatted_date] = []
+                plan_by_dates[formatted_date].append(exercise_id)
+
+        # Daily reminder logic for today
+        today_str = datetime.today().strftime("%Y-%m-%d")
+        created_today_reminder = False
+
+        print("Generated plan dates:", list(plan_by_dates.keys()))
+        print("Today is:", today_str)
+
+        if today_str in plan_by_dates:
+            for exercise_id in plan_by_dates[today_str]:
+                details = f"Don't forget your workout for plan {plan_id} today! 🏋️‍♀️"
+                cursor.execute('''
+                    INSERT INTO notifications (plan_id, user_id, type, details, checked, exercise_id, date)
+                    VALUES (?, ?, 'daily reminder', ?, 0, ?, ?)
+                ''', (plan_id, user_id, details, exercise_id, today_str))
+            created_today_reminder = True
+            print(f"✅ Reminder created for today: {today_str}")
+        else:
+            print(f"❌ No exercises scheduled for today ({today_str}) in the plan.")
 
         conn.commit()
         conn.close()
 
-        return jsonify({"success": True, "plan_id": plan_id})
+        return jsonify({
+            'message': '✅ Custom plan saved successfully.',
+            'plan_id': plan_id,
+            'created_today_reminder': created_today_reminder,
+            'plan': plan_by_dates
+        })
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("❌ Error saving custom plan:", e)
         return jsonify({"error": str(e)}), 500
+    
 #delete plan
 @app.route('/delete-plan/<int:plan_id>', methods=['DELETE'])
 def delete_plan(plan_id):
@@ -1243,49 +1287,61 @@ def check_workout_progress(plan_id):
         'total_days': total_days
     }), 200
 
-#mark exercise for progress analytics
-@app.route('/mark-exercise-status/<user_id>', methods=['POST'])
-def mark_exercise_status(user_id):
-    data = request.get_json()
-    status_to_mark = data.get('status')  # 'completed' or 'overdue'
-    plan_id = data.get('plan_id')
-    exercise_id = data.get('exercise_id')
-    date_str = data.get('date')  # yyyy-mm-dd
-    
-    print("DEBUG mark_exercise_status:")
-    print("user_id:", user_id)
-    print("plan_id:", plan_id)
-    print("exercise_id:", exercise_id)
-    print("date_str:", date_str)
-    print("status:", status_to_mark)
-    if not all([exercise_id, plan_id, date_str, status_to_mark]):
-        return jsonify({'error': 'Missing required fields'}), 400
-    if status_to_mark not in ['completed', 'overdue']:
-        return jsonify({'error': 'Invalid status'}), 400
-
+@app.route('/handle-notification/<int:notification_id>', methods=['POST'])
+def handle_notification(notification_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if already exists
-    cursor.execute('''
-        SELECT * FROM ExerciseStatus
-        WHERE user_id = ? AND exercise_id = ? AND plan_id = ? AND date = ?
-    ''', (user_id, exercise_id, plan_id, date_str))
-    existing = cursor.fetchone()
+    # Fetch the notification
+    cursor.execute("SELECT * FROM notifications WHERE notification_id = ?", (notification_id,))
+    notification = cursor.fetchone()
 
-    if existing:
-        # Already marked
-        return jsonify({'message': 'Already recorded for this date'}), 200
+    if not notification:
+        conn.close()
+        return jsonify({'error': 'Notification not found'}), 404
 
-    # Insert status
-    cursor.execute('''
-        INSERT INTO ExerciseStatus (user_id, exercise_id, plan_id, date, status)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
+    notification_type = notification['type']
+    user_id = notification['user_id']
+
+    # Only parse JSON for daily reminder
+    if notification_type == 'daily reminder':
+        try:
+            data = request.get_json(force=True)
+        except Exception as e:
+            conn.close()
+            return jsonify({'error': 'Missing or invalid JSON body'}), 400
+
+        status_to_mark = data.get('status')
+        plan_id = data.get('plan_id')
+        exercise_id = data.get('exercise_id')
+        date_str = data.get('date')
+
+        if not all([exercise_id, plan_id, date_str, status_to_mark]):
+            conn.close()
+            return jsonify({'error': 'Missing required fields'}), 400
+        if status_to_mark not in ['completed', 'overdue']:
+            conn.close()
+            return jsonify({'error': 'Invalid status'}), 400
+
+        cursor.execute('''
+            SELECT * FROM ExerciseStatus
+            WHERE user_id = ? AND exercise_id = ? AND plan_id = ? AND date = ?
+        ''', (user_id, exercise_id, plan_id, date_str))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'message': 'Already recorded for this date'}), 200
+
+        cursor.execute('''
+            INSERT INTO ExerciseStatus (user_id, exercise_id, plan_id, date, status)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
+
+    # ✅ Mark the notification as checked for all types
+    cursor.execute("UPDATE notifications SET checked = 1 WHERE notification_id = ?", (notification_id,))
     conn.commit()
     conn.close()
 
-    return jsonify({'message': f'Exercise marked as {status_to_mark}'}), 200
+    return jsonify({'message': f'{notification_type} handled successfully'}), 200
 
 # --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
 @app.route('/api/users', methods=['GET'])
@@ -2597,10 +2653,7 @@ def check_reminders(user_id):
 
     for plan in plans:
         plan_id = plan['plan_id']
-        duration = int(plan['duration_months'])
         start_date = datetime.strptime(plan['created_at'].split()[0], '%Y-%m-%d')  # fixes timestamp issue
-
-        end_date = start_date + timedelta(weeks=duration*4)
 
         current_date = start_date
         while current_date <= datetime.today():
@@ -2628,6 +2681,7 @@ def check_reminders(user_id):
                     ''', (user_id, exercise_id, plan_id, formatted_date))
 
             current_date += timedelta(days=1)
+        insert_daily_reminder_if_due(user_id, plan_id)
 
     conn.commit()
     conn.close()
@@ -2635,21 +2689,43 @@ def check_reminders(user_id):
 #daily reminder helper for exercise
 def insert_daily_reminder_if_due(user_id, plan_id):
     conn = get_db_connection()
+    cursor = conn.cursor()
     today = datetime.now().strftime('%Y-%m-%d')
 
-    # Check if a reminder for today already exists
-    check = conn.execute("""
-        SELECT 1 FROM notifications
-        WHERE user_id = ? AND plan_id = ? AND DATE(created_at) = ? AND type = 'daily reminder'
-    """, (user_id, plan_id, today)).fetchone()
+    # ✅ Get all uncompleted exercises scheduled for today in this plan
+    cursor.execute('''
+        SELECT wpe.Exercise_ID
+        FROM WorkoutPlanExercise wpe
+        LEFT JOIN ExerciseStatus es ON
+            wpe.Exercise_ID = es.exercise_id AND
+            wpe.plan_id = es.plan_id AND
+            es.user_id = ? AND
+            es.date = ?
+        WHERE wpe.plan_id = ?
+          AND wpe.date = ?
+          AND es.status IS NULL
+    ''', (user_id, today, plan_id, today))
 
-    if not check:
-        conn.execute("""
-            INSERT INTO notifications (user_id, plan_id, type, date, checked)
-            VALUES (?, ?, 'daily reminder', datetime('now'), 0)
-        """, (user_id, plan_id))
-        conn.commit()
+    pending_exercises = cursor.fetchall()
 
+    for ex in pending_exercises:
+        exercise_id = ex['Exercise_ID']
+
+        # ✅ Check if reminder for this exercise already exists
+        cursor.execute("""
+            SELECT 1 FROM notifications
+            WHERE user_id = ? AND plan_id = ? AND date = ? AND exercise_id = ? AND type = 'daily reminder'
+        """, (user_id, plan_id, today, exercise_id))
+        exists = cursor.fetchone()
+
+        if not exists:
+            details = f"Don't forget your workout for plan {plan_id} today! 🏋️‍♀️"
+            cursor.execute("""
+                INSERT INTO notifications (user_id, plan_id, type, details, checked, exercise_id, date)
+                VALUES (?, ?, 'daily reminder', ?, 0, ?, ?)
+            """, (user_id, plan_id, details, exercise_id, today))
+
+    conn.commit()
     conn.close()
 
 #admin send notifications

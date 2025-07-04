@@ -124,6 +124,16 @@ class _CustomizePlanPageState extends State<CustomizePlanPage> {
             trailing: Icon(Icons.calendar_today),
             onTap: _pickStartDate,
           ),
+          SizedBox(height: 20),
+          Text("Plan Duration (Months): ${durationMonths.toInt()}"),
+          Slider(
+            min: 1,
+            max: 12,
+            divisions: 11,
+            value: durationMonths,
+            onChanged: (val) => setState(() => durationMonths = val),
+            label: "${durationMonths.toInt()} months",
+          ),
           Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
