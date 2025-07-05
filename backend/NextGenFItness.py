@@ -2740,6 +2740,27 @@ def insert_daily_reminder_if_due(user_id, plan_id):
     conn.commit()
     conn.close()
 
+@app.route('/insert-all-reminders/<user_id>', methods=['POST'])
+def insert_all_due_reminders(user_id):
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 🔁 Get all plans with exercises scheduled today for this user
+    cursor.execute('''
+        SELECT DISTINCT plan_id
+        FROM WorkoutPlanExercise
+        WHERE user_id = ? AND date = ?
+    ''', (user_id, today))
+
+    plans = cursor.fetchall()
+    conn.close()
+
+    for plan in plans:
+        insert_daily_reminder_if_due(user_id, plan['plan_id'])
+
+    return jsonify({'message': f'Daily reminders inserted for {len(plans)} plans.'}), 200
+
 #admin send notifications
 @app.route('/admin/send-notification', methods=['POST'])
 def send_admin_notification():
