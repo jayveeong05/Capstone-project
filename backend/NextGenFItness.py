@@ -3012,30 +3012,45 @@ def generate_report_id():
     conn.close()
     return f"RP{(count + 1):03d}"
     
-# API to insert a new report entry
-@app.route('/report-log', methods=['POST'])
+def format_user_id(numeric_id):
+    return f"U{int(numeric_id):03d}"   
+
+@app.route('/api/log-report', methods=['POST'])
 def log_report_generation():
     data = request.get_json()
-    user_id = data.get('user_id')
+    numeric_user_id = data.get('user_id')
 
-    if not user_id:
-        return jsonify({'error': 'Missing user_id'}), 400
+    if numeric_user_id is None:
+        return jsonify({"error": "Missing user_id"}), 400
 
-    try:
-        report_id = generate_report_id()
-        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # Convert int to formatted string like 'U012'
+    user_id = format_user_id(numeric_user_id)
 
-        conn = get_db_connection()
-        conn.execute(
-            "INSERT INTO Report (report_id, user_id, created_at) VALUES (?, ?, ?)",
-            (report_id, user_id, created_at)
-        )
-        conn.commit()
-        conn.close()
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-        return jsonify({'success': True, 'report_id': report_id, 'created_at': created_at})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    # Get latest report ID
+    cursor.execute("SELECT report_id FROM Report ORDER BY report_id DESC LIMIT 1")
+    last = cursor.fetchone()
+    if last:
+        last_num = int(last['report_id'][2:])
+        new_num = last_num + 1
+    else:
+        new_num = 1
+    new_report_id = f"RP{new_num:03d}"
+
+    created_at = datetime.now().strftime('%Y-%m-%d')
+
+    cursor.execute(
+        "INSERT INTO Report (report_id, user_id, created_at) VALUES (?, ?, ?)",
+        (new_report_id, user_id, created_at)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Report logged successfully", "report_id": new_report_id})
+
+
 
 if __name__ == '__main__':
     # Create necessary directories
