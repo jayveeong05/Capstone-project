@@ -1,11 +1,10 @@
-// Full merged AnalyticsDashboard with Dietary Analytics tab
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AnalyticsDashboard extends StatefulWidget {
   const AnalyticsDashboard({super.key});
@@ -50,6 +49,29 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard> with SingleTick
       }
     });
   }
+
+Future<void> logReportGeneration() async {
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getString('user_id');
+
+  if (userId == null) {
+    print('User ID not found in SharedPreferences.');
+    return;
+  }
+
+  final response = await http.post(
+    Uri.parse('http://10.0.2.2:5000/api/log-report'),
+    headers: {'Content-Type': 'application/json'},
+    body: json.encode({'user_id': userId}),
+  );
+
+  if (response.statusCode == 200) {
+    print('Report logged successfully.');
+  } else {
+    print('Failed to log report: ${response.statusCode}');
+  }
+}
+
 
   Future<void> fetchWorkoutAnalytics() async {
     final response = await http.get(Uri.parse('http://10.0.2.2:5000/workout-analytics/global'));
@@ -228,6 +250,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard> with SingleTick
     ));
 
     await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+    await logReportGeneration();
   }
 
   Widget buildWorkoutTab() {
