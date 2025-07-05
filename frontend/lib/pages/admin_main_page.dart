@@ -9,7 +9,7 @@ import 'fitness_page_management.dart';
 import 'package:intl/intl.dart';
 import 'admin_send_notification.dart';
 import 'admin_respond.dart';
-import 'work_analytics_page.dart';
+import 'analytics_page.dart';
 import 'recipe_library_management_page.dart'; 
 import 'dietary_analytics_screen.dart';
 
@@ -410,22 +410,6 @@ Future<void> _toggleSystemStatus(bool disable) async {
       ),
     );
   }
-
-  void _showFeatureComingSoon(String featureName) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(featureName),
-          content: Text('This feature ($featureName) is coming soon!'),
-          actions: [
-            TextButton(child: const Text('OK'), onPressed: () => Navigator.of(context).pop()),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _buildDashboardContent() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -518,15 +502,14 @@ Future<void> _toggleSystemStatus(bool disable) async {
                 MaterialPageRoute(builder: (context) => const UserEngagementAnalyticsPage()),
               ),
             },
-            {'name': 'User Fitness Progress Data Analytics', 'onTap': () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => AnalyticsDashboard()),
-              ),},
             {'name': 'User Dietary Habit Data Analytics', 'onTap': () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const DietaryAnalyticsScreen()),
               ),},
-            {'name': 'Report Generation', 'onTap': () => _showFeatureComingSoon('Report Generation')},
+            {'name': 'Report Generation', 'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AnalyticsDashboard()),
+              ),},
           ]),
         ],
       ),
