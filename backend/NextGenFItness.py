@@ -1287,6 +1287,8 @@ def check_workout_progress(plan_id):
         'total_days': total_days
     }), 200
 
+from datetime import datetime
+
 @app.route('/handle-notification/<int:notification_id>', methods=['POST'])
 def handle_notification(notification_id):
     conn = get_db_connection()
@@ -1302,6 +1304,13 @@ def handle_notification(notification_id):
 
     notification_type = notification['type']
     user_id = notification['user_id']
+    notification_date_str = notification['date']
+
+    # 🗓️ Compare with today's date
+    today_str = datetime.today().strftime('%Y-%m-%d')
+    if notification_date_str != today_str:
+        conn.close()
+        return jsonify({'message': 'Notification ignored (not today)'})
 
     # Only parse JSON for daily reminder
     if notification_type == 'daily reminder':
@@ -1328,6 +1337,8 @@ def handle_notification(notification_id):
             WHERE user_id = ? AND exercise_id = ? AND plan_id = ? AND date = ?
         ''', (user_id, exercise_id, plan_id, date_str))
         if cursor.fetchone():
+            cursor.execute("UPDATE notifications SET checked = 1 WHERE notification_id = ?", (notification_id,))
+            conn.commit()
             conn.close()
             return jsonify({'message': 'Already recorded for this date'}), 200
 
@@ -1336,12 +1347,13 @@ def handle_notification(notification_id):
             VALUES (?, ?, ?, ?, ?)
         ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
 
-    # ✅ Mark the notification as checked for all types
+    # ✅ Mark the notification as checked
     cursor.execute("UPDATE notifications SET checked = 1 WHERE notification_id = ?", (notification_id,))
     conn.commit()
     conn.close()
 
     return jsonify({'message': f'{notification_type} handled successfully'}), 200
+
 
 # --- NEW ENDPOINT TO GET ALL USERS WITH PROFILE DATA ---
 @app.route('/api/users', methods=['GET'])
