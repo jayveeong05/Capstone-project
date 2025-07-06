@@ -42,6 +42,7 @@ The repository is organized into three main parts: Readme.md, the backend server
 ├── /backend
 │   ├── NextGenFItness.py     # Main Flask application file
 │   ├── requirements.txt      # Backend Python dependencies
+│   ├── NextGenFitness.db     # SQLite database file
 │   └── ...                   # Other backend files
 │
 └── /frontend
@@ -65,6 +66,9 @@ If you're familiar with development environments, you can skip to the essential 
 
 Table of Contents
 1.	Prerequisites
+   A. System Requirements
+   B. Software Requirements
+   C. Developer Mode Requirement
 2.	Software Installation and Verification
    A. Git Version Control
    B. Python Interpreter
@@ -79,7 +83,8 @@ Table of Contents
    Step 1: Start the Backend Server
    Step 2: Launch the Android Emulator
    Step 3: Run the Frontend Application
-5.	Troubleshooting during Project Setup
+5.	Admin Dashboard Access
+6.	Troubleshooting during Project Setup
    A. Command Prompt Issues
    B. Git Issues
    C. Python Issues
@@ -91,7 +96,7 @@ Table of Contents
    I. Performance Issues
    J. General Tips for Beginners
    K. When to Ask for Help
-6.	Troubleshooting during Running Application
+7.	Troubleshooting during Running Application
    A. API Key Issues
    B. Application Crashes
    C. Network and Connection Issues
@@ -101,8 +106,8 @@ Table of Contents
    G. User Interface Issues
    H. How to Report Issues
    I. Emergency Contact
-7.	Frequently Asked Questions (FAQ)
-8.	Contact Information
+8.	Frequently Asked Questions (FAQ)
+9.	Contact Information
 
 ## 1. Prerequisites
 Before you begin, please ensure your system meets the following requirements:
@@ -129,6 +134,16 @@ Before you begin, please ensure your system meets the following requirements:
 - **Flutter SDK** (latest stable version)
 - **Android Studio** (latest version)
 - **Visual Studio Code** (recommended)
+
+### C. Developer Mode Requirement
+**IMPORTANT:** Before proceeding with the installation, you must enable Developer Mode on your Windows device.
+1. **Open Windows Settings:** Press Windows key + I
+2. **Navigate to System:** Click on "System" in the left sidebar
+3. **Find Developer Options:** Scroll down and click on "For developers"
+4. **Enable Developer Mode:** Toggle the switch next to "Developer Mode" to turn it ON
+5. **Restart if Required:** Windows may prompt you to restart your computer. If so, restart and then continue with the installation process.
+
+**Note:** Developer Mode is required for running Android emulators and development tools on Windows 10/11.
 
 ## 2. Software Installation and Verification
 This section will guide you through installing and verifying all the necessary software.
@@ -179,7 +194,15 @@ While you can use any editor, we recommend VS Code for its excellent Flutter sup
 Now that all the necessary software is installed, it's time to download the project files from GitHub and prepare them for use.
 
 ### Step 1: Download the Project Code
-We will use the git clone command to create a local copy of the project on your computer.
+You have two options to download the project files:
+
+#### Option A: Download from Moodle (Recommended for Students)
+1. **Access Moodle:** Go to the following link: https://lms2.apiit.edu.my/mod/assign/view.php?id=881762
+2. **Download Project Files:** Download the project folder from the Moodle assignment
+3. **Extract Files:** Extract the downloaded folder to your desired location (e.g., C:\Projects)
+4. **Verify the Download:** You should now see a capstone folder in your projects directory
+
+#### Option B: Clone from GitHub (For Developers)
 1. **Create a Project Folder:** First, decide where you want to save the project. It's good practice to have a dedicated folder for your projects, for example, C:\Projects. Create this folder if it doesn't exist.
 2. **Open Command Prompt in Folder:** Navigate to your newly created projects folder. A simple way is to open the folder in Windows File Explorer, click on the address bar at the top, type cmd, and press Enter. This will open a Command Prompt directly in that location.
 3. **Clone the Repository:** In the Command Prompt window, type the following command and press Enter:
@@ -245,7 +268,25 @@ The application consists of two parts: the backend server and the frontend app. 
 5. The first time you run it, it will take a few minutes to build and install the app onto the emulator. Once complete, the NextGen Fitness app will launch automatically.
 **If all steps were followed correctly, the application will launch on the emulator. The setup is now complete.**
 
-5. Troubleshooting during Project Setup
+## 5. Admin Dashboard Access
+The NextGen Fitness application includes an admin dashboard for user management and system monitoring. Since admin account registration is not available through the regular user interface, use the following credentials to access the admin dashboard:
+
+### Admin Login Credentials:
+- **Username:** apu
+- **Password:** neo123
+
+### How to Access Admin Dashboard:
+1. **Launch the Application:** Follow the steps in Section 4 to start the application
+2. **Navigate to Login:** Use the login screen in the application
+3. **Enter Admin Credentials:** Use the username and password provided above
+4. **Access Admin Features:** Once logged in with admin credentials, you will have access to:
+   - User management and monitoring
+   - System analytics and reporting
+   - Feedback management
+
+**Note:** Admin accounts have elevated privileges and access to sensitive system information. Use these credentials responsibly and only for authorized testing or development purposes.
+
+## 6. Troubleshooting during Project Setup
 This section helps you solve common problems you might encounter while setting up and running the application. **Don't worry if you run into issues - they're very common, especially for first-time users!**
 
 ### A. Command Prompt Issues
@@ -369,7 +410,7 @@ If you've tried the solutions above and still can't get the application running:
 
 **Remember:** Everyone encounters problems when setting up development environments for the first time. Don't get discouraged - these issues are very common and solvable!
 
-6. Troubleshooting during Running Application
+## 7. Troubleshooting during Running Application
 This section covers common issues you might encounter while using the NextGen Fitness application after it's been successfully set up and launched.
 
 ### A. API Key Issues
@@ -377,7 +418,7 @@ This section covers common issues you might encounter while using the NextGen Fi
 - This means the application's API key has expired or is no longer valid.
 - **What to do:**
   1. **Take a screenshot** of the error message (press PrtScn key on your keyboard)
-  2. **Contact us immediately** using the information in Section 8 (Contact Information)
+  2. **Contact us immediately** using the information in Section 9 (Contact Information)
   3. You can also send feedback directly through the application
 - **Note:** This is a server-side issue that requires developer attention. Please do not try to fix this yourself.
 
@@ -497,13 +538,13 @@ When reporting any of the above issues, please provide:
 
 ### I. Emergency Contact
 If the application is completely unusable or you're experiencing critical issues:
-- **Contact us immediately** using the information in Section 8
+- **Contact us immediately** using the information in Section 9
 - **Include "URGENT"** in your message subject
 - **Provide as much detail** as possible about the issue
 
 **Remember:** Most issues can be resolved by restarting the app or checking your internet connection. If you're unsure about anything, don't hesitate to contact us for help!
 
-7. Frequently Asked Questions (FAQ)
+## 8. Frequently Asked Questions (FAQ)
 
 **Q: How long does the entire setup process take?**
 A: For beginners, expect **1-2 hours total**. For experienced developers, **30-45 minutes**. The longest parts are downloading Android Studio (~15 minutes) and the first emulator startup (~10 minutes).
@@ -566,7 +607,7 @@ A: To remove all installed software:
 A: The **backend (Python)** handles data processing, AI features, database operations, and API endpoints. The **frontend (Flutter)** is the user interface you interact with.
 
 **Q: Can I contribute to this project?**
-A: **Yes!** Contact the development team through the information in Section 8. We welcome bug reports, feature suggestions, and code contributions.
+A: **Yes!** Contact the development team through the information in Section 9. We welcome bug reports, feature suggestions, and code contributions.
 
 **Q: What if I encounter an error not covered in the troubleshooting sections?**
 A: **Take a screenshot** of the error, note what you were doing, and contact us immediately. Include "NEW ISSUE" in your message subject.
@@ -583,7 +624,7 @@ A: Admin features are available to users with admin role (role = 0). **Contact t
 **Q: What database does the application use?**
 A: The application uses **SQLite database (NextGenFitness.db)** for data persistence, which is why it's designed for emulator use only.
 
-8. Contact Information
+## 9. Contact Information
 If you need help with any issues not covered in the troubleshooting sections above, please contact our development team:
 
 **Microsoft Teams / Outlook:**
