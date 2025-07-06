@@ -174,7 +174,7 @@ class _DietPlansPageState extends State<DietPlansPage> {
                           ...archivedPlans.map((plan) {
                             final status = plan['user_status'] ?? plan['status'] ?? 'Unknown';
                             final statusColor = {
-                              'Finished': Colors.red,
+                              'Completed': Colors.blue,
                               'Replaced': Colors.grey,
                               'Cancelled': Colors.orange,
                             }[status] ?? Colors.blueGrey;

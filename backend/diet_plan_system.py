@@ -1,6 +1,4 @@
-# diet_plan_system.py
 # Diet Plan Management System for NextGenFitness
-# This module handles diet plan generation, meal planning, and nutrition tracking
 
 import json
 import sqlite3
@@ -12,9 +10,6 @@ import random
 from datetime import datetime, date, timedelta
 from collections import defaultdict, Counter
 from flask import request, jsonify
-
-# Import the database connection function from your main application
-# from NextGenFitness import get_db_connection, app
 
 class DietPlanSystem:
     """Main class for handling diet plan operations"""
@@ -89,8 +84,6 @@ class DietPlanSystem:
             return f'PRG{numeric_part:03d}'
         except Exception as e:
             print(f"Error generating progress ID: {e}")
-            # Fallback or re-raise, depending on desired error handling
-            # For now, let's just use a UUID as a fallback to prevent blocking
             return f"PRG{int(uuid.uuid4().hex[:8], 16):08d}" 
         finally:
             conn.close()
@@ -262,7 +255,7 @@ class DietPlanSystem:
             c = conn.cursor()
 
             # Determine diet_plan_id ---
-            diet_plan_id = data.get('diet_plan_id') # Try to get from the request first
+            diet_plan_id = data.get('diet_plan_id') # Try to get from the request 
             if not diet_plan_id:
                 # If not provided by frontend, fetch the user's latest (active) diet plan
                 c.execute("SELECT diet_plan_id FROM DietPlan WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
@@ -316,8 +309,8 @@ class DietPlanSystem:
             }
 
         except Exception as e:
-            conn.rollback() # Important: Rollback on error
-            print(f"Error logging meal: {e}") # Print error for debugging
+            conn.rollback()
+            print(f"Error logging meal: {e}")
             return {'success': False, 'error': str(e)}
         
     def _update_daily_progress(self, user_id, log_date):
@@ -355,8 +348,7 @@ class DietPlanSystem:
                 """, (new_total_calories, new_total_meals, progress_entry['progress_id']))
                 print(f"Updated progress for {user_id} on {log_date} to {new_total_calories} calories.")
             else:
-                # This should ideally not happen if meals are logged correctly,
-                # but handle if a meal is added to a day without a progress record.
+                # Handle if a meal is added to a day without a progress record.
                 # Find an existing diet plan for the user or default
                 c.execute("SELECT diet_plan_id FROM DietPlan WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
                 diet_plan_id_row = c.fetchone()
@@ -402,7 +394,7 @@ class DietPlanSystem:
             c.execute("DELETE FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
             conn.commit()
 
-            # Now, update the user's daily progress for that date
+            # Update the user's daily progress for that date
             self._update_daily_progress(user_id, log_date)
 
             return {'success': True, 'message': 'Meal deleted successfully.'}
@@ -421,8 +413,8 @@ class DietPlanSystem:
         conn = self.get_db_connection()
         c = conn.cursor()
         try:
-            # Get original meal info to determine if date changed (unlikely with this UI but good to get)
-            # and to get user_id and old_calories for progress update context
+            # Get original meal info to determine if date changed
+            # Get user_id and old_calories for progress update context
             c.execute("SELECT user_id, calories, date(created_at) AS log_date FROM LoggedMeal WHERE meal_id = ?", (meal_id,))
             original_meal_info = c.fetchone()
 
@@ -555,7 +547,16 @@ class DietPlanSystem:
                 
                 # Calculate current day of plan
                 start_date_obj = datetime.strptime(active_plan['start_date'], '%Y-%m-%d').date()
+                end_date_obj = datetime.strptime(active_plan['end_date'], '%Y-%m-%d').date()
                 today = date.today()
+                
+                # Check if the plan has expired
+                if today >= end_date_obj:
+                    # If the plan has expired, set active_plan to None in the summary
+                    summary['active_plan'] = None
+                    c.execute("UPDATE DietPlan SET status = 'Completed' WHERE diet_plan_id = ?", (active_plan['diet_plan_id'],))
+                    conn.commit()
+                    return {'success': True, 'summary': summary} # Return immediately if plan expired
                 
                 # Ensure today is not before start_date, if it is, set day 0 or 1
                 if today < start_date_obj:
@@ -762,7 +763,7 @@ class DietPlanSystem:
             """)
             all_allergies = []
             for row in cursor.fetchall():
-                # Assuming allergies are stored as comma-separated string
+                # Allergies are stored as comma-separated string
                 allergies_list = [a.strip() for a in row["allergies"].split(',') if a.strip()]
                 all_allergies.extend(allergies_list)
 
@@ -800,7 +801,7 @@ class DietPlanSystem:
                 }
         except Exception as e:
             print(f"Error fetching dietary habit analytics: {e}")
-            # Optionally, return an error state or partial data
+            # Return an error state or partial data
             return {'error': str(e)}
         finally:
             conn.close()
@@ -837,7 +838,7 @@ class DietPlanSystem:
             if normalized in restricted:
                 return False
 
-        # Optional: Fitness goal filtering based on macros
+        # Fitness goal filtering based on macros
         if recipe_nutrition and fitness_goal:
             cal = recipe_nutrition.get('calories', 0)
             protein = recipe_nutrition.get('protein', 0)
@@ -855,7 +856,7 @@ class DietPlanSystem:
     def calculate_daily_calories(self, user_prefs):
         """Calculate daily calorie needs based on user profile and goals"""
         try:
-            # ✅ Fix: Convert sqlite3.Row to dict if necessary
+            # Convert sqlite3.Row to dict
             if isinstance(user_prefs, sqlite3.Row):
                 user_prefs = dict(user_prefs)
 
@@ -939,10 +940,10 @@ class DietPlanSystem:
             nutrition = json.loads(row[5])
             recipe_calories = nutrition.get("calories", 0)
 
-            # ✅ Check calories range
+            # Check calories range
             calories_ok = abs(recipe_calories - calories_per_meal) <= 400
 
-            # ✅ Check allergens using allergen_map
+            # Check allergens using allergen_map
             allergen_ok = True
             for ingredient in ingredients:
                 allergen = allergen_map.get(ingredient)
@@ -950,11 +951,11 @@ class DietPlanSystem:
                     allergen_ok = False
                     break
 
-            # ✅ Check diet compatibility
+            # Check diet compatibility
             diet_ok = self.is_diet_compatible(ingredients, dietary_preference, fitness_goal, nutrition)
 
 
-            # ✅ Check ingredient dislikes
+            # Check ingredient dislikes
             ingredient_ok = True
             for ingredient in ingredients:
                 pref = ingredient_preferences.get(ingredient.lower())
@@ -962,13 +963,7 @@ class DietPlanSystem:
                     ingredient_ok = False
                     break
 
-            # # ✅ Diet filtering (optional - simple version)
-            # diet_ok = True
-            # if dietary_preference == "vegetarian":
-            #     diet_ok = all(ingredient not in ["Chicken Breast", "Beef", "Turkey Breast", "Salmon", "Cod", "Shrimp"] for ingredient in ingredients)
-            # elif dietary_preference == "vegan":
-            #     diet_ok = all(ingredient not in ["Chicken Breast", "Beef", "Turkey Breast", "Salmon", "Cod", "Shrimp", "Milk", "Cheese", "Egg", "Greek Yogurt", "Mayonnaise"] for ingredient in ingredients)
-
+            # If all checks pass, add to suitable recipes
             if calories_ok and allergen_ok and diet_ok and ingredient_ok:
                 recipe_dict = dict(row)
                 recipe_dict['calories'] = recipe_calories
@@ -994,7 +989,7 @@ class DietPlanSystem:
         
         meal_plan = []
         
-        # Categorize recipes by meal type (simple categorization)
+        # Categorize recipes by meal type
         breakfast_recipes = []
         lunch_recipes = []
         dinner_recipes = []
@@ -1331,13 +1326,6 @@ def setup_diet_plan_routes(app, diet_system):
                     WHERE user_id = ? AND diet_plan_id = ?
                 """, (date.today(), user_id, old_diet_plan_id))
 
-                # # Update DietPlan status as well
-                # c.execute("""
-                #     UPDATE DietPlan 
-                #     SET status = 'Replaced'
-                #     WHERE diet_plan_id = ?
-                # """, (old_diet_plan_id,))
-
             # Determine plan name and description based on dietary preferences
             goal = user_prefs.get('dietary_goal', 'Healthy Lifestyle')
             diet_type = user_prefs.get('dietary_preference', 'General')
@@ -1361,14 +1349,6 @@ def setup_diet_plan_routes(app, diet_system):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (diet_plan_id, user_id, plan_name, description, start_date, end_date, daily_calories, protein_target, carbs_target, fat_target, 25, duration_days, 'Active', date.today()))
 
-            # # Insert into UserDietPlan
-            # start_date = date.today()
-            # end_date = start_date + timedelta(days=duration_days)
-            # c.execute("""
-            #     INSERT INTO UserDietPlan (user_id, diet_plan_id, start_date, end_date, status)
-            #     VALUES (?, ?, ?, ?, 'Ongoing')
-            # """, (user_id, diet_plan_id, start_date, end_date))
-            
             # Insert meals
             for i, meal in enumerate(meal_plan):
                 meal_plan_id = f"MP{start_num + i:03d}"
@@ -1379,11 +1359,6 @@ def setup_diet_plan_routes(app, diet_system):
                     meal_plan_id, diet_plan_id, meal['day'], meal['meal_type'],
                     meal['recipe']['recipe_id'], meal['recipe']['calories']
                 ))
-            
-            # c.execute("""
-            #     INSERT INTO NutritionTargets (target_id, diet_plan_id, daily_calories, protein_grams, carbs_grams, fat_grams, fiber_grams)
-            #     VALUES (?, ?, ?, ?, ?, ?, ?)
-            # """, (target_id, diet_plan_id, daily_calories, protein_target, carbs_target, fat_target, 25))
             
             conn.commit()
             conn.close()
@@ -1422,8 +1397,6 @@ def setup_diet_plan_routes(app, diet_system):
             }), 201
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()  # See full traceback in console
             return jsonify({'error': f'Error generating diet plan: {str(e)}', 'success': False}), 500
 
     @app.route('/api/user-diet-plans/<user_id>', methods=['GET'])
@@ -1433,7 +1406,6 @@ def setup_diet_plan_routes(app, diet_system):
             # Ensure user_id format
             if user_id.isdigit():
                 user_id = f"U{int(user_id):03d}"
-            print(f"[DEBUG] Looking up diet plans for user_id: {user_id}")
 
             
             conn = diet_system.get_db_connection()
@@ -1604,9 +1576,9 @@ def setup_diet_plan_routes(app, diet_system):
                     VALUES (?, ?, ?, ?, ?)
                 """, (diet_pref_id, user_id, data.get('diet_type'), data.get('dietary_goal'), 
                       data.get('allergies')))
-            # --- Merge: Clear old ingredient preferences and insert new ones ---
+
             c.execute("DELETE FROM DietPreferenceIngredient WHERE diet_pref_id = ?", (diet_pref_id,))
-            ingredient_prefs = data.get('ingredient_preferences', [])  # Expecting a list of dicts
+            ingredient_prefs = data.get('ingredient_preferences', [])
             for pref in ingredient_prefs:
                 ingredient_name = pref.get('ingredient_name')
                 preference_type = pref.get('preference_type')
@@ -1625,7 +1597,6 @@ def setup_diet_plan_routes(app, diet_system):
                     INSERT INTO DietPreferenceIngredient (diet_pref_id, ingredient_id, preference_type)
                     VALUES (?, ?, ?)
                 """, (diet_pref_id, ingredient_id, preference_type))
-            # --- End merge ---
 
             conn.commit()
             conn.close()
@@ -1656,7 +1627,7 @@ def setup_diet_plan_routes(app, diet_system):
             conn = diet_system.get_db_connection()
             c = conn.cursor()
 
-            progress_id = self.generate_progress_id()
+            progress_id = diet_system.generate_progress_id()
             current_date = datetime.now().date()
             
             c.execute("""
@@ -1787,14 +1758,6 @@ def setup_diet_plan_routes(app, diet_system):
             conn = diet_system.get_db_connection()
             c = conn.cursor()
 
-            # c.execute("""
-            #     SELECT meal_id, lm.diet_plan_id, meal_type, meal_name, calories, lm.notes, lm.created_at, date(lp.date) AS log_date
-            #     FROM LoggedMeal lm
-            #     LEFT JOIN UserDietPlanProgress lp ON lm.progress_id = lp.progress_id
-            #     WHERE lm.user_id = ?
-            #     ORDER BY log_date DESC, lm.created_at DESC
-            # """, (user_id,))
-
             c.execute("""
             SELECT meal_id, diet_plan_id, meal_type, meal_name, calories, notes, created_at
             FROM LoggedMeal
@@ -1869,7 +1832,7 @@ def setup_diet_plan_routes(app, diet_system):
             if isinstance(user_id, int) or (isinstance(user_id, str) and user_id.isdigit()):
                 user_id = f"U{int(user_id):03d}"
 
-            # Validate date format (optional but recommended)
+            # Validate date format
             try:
                 datetime.strptime(date, '%Y-%m-%d')
             except ValueError:
@@ -1914,15 +1877,15 @@ def setup_diet_plan_routes(app, diet_system):
 # Integration helper function
 def integrate_diet_system_with_app(app, get_db_connection_func):
     """
-    Helper function to integrate the diet system with your existing Flask app
+    Helper function to integrate the diet system with existing Flask app
     
-    Usage in your main NextGenFitness.py:
+    Usage in main NextGenFitness.py:
     from diet_plan_system import integrate_diet_system_with_app
     
-    # After creating your Flask app and defining get_db_connection
+    # After creating Flask app and defining get_db_connection
     integrate_diet_system_with_app(app, get_db_connection)
     
-    # Also call this in your init_db() function:
+    # Also call this in init_db() function:
     diet_system = DietPlanSystem(get_db_connection)
     diet_system.init_diet_plan_tables()
     """

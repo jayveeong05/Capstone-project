@@ -387,11 +387,11 @@ def login():
             print(f"Error logging login activity: {e}")
             # Still allow login to proceed
 
-        # 🔁 Auto-update progress for all workout plans of this user
+        # Auto-update progress for all workout plans of this user
             try:
                 today = datetime.now().strftime("%Y-%m-%d")
 
-                # ✅ Get latest plan for the user
+                # Get latest plan for the user
                 c.execute("""
                     SELECT * FROM WorkoutPlan 
                     WHERE user_id = ? 
@@ -402,7 +402,7 @@ def login():
 
                 latest_plan_id = latest_plan['plan_id'] if latest_plan else None
 
-                # ✅ Get today's workout exercises for that plan
+                # Get today's workout exercises for that plan
                 today_exercises = []
                 if latest_plan_id:
                     c.execute("""
@@ -413,7 +413,7 @@ def login():
                     """, (latest_plan_id, today))
                     today_exercises = [dict(row) for row in c.fetchall()]
 
-                # ✅ Return with login response
+                # Return with login response
             except Exception as e:
                 print(f"❌ Error fetching today's workout: {e}")
                 today_exercises = []
@@ -966,7 +966,7 @@ def add_exercise():
     category = data.get('category')
     instructions = data.get('instructions')
     
-    # ✅ Decode the muscles list (already a list in JSON)
+    # Decode the muscles list (already a list in JSON)
     primary_muscles_list = data.get('primaryMuscles', [])
     if isinstance(primary_muscles_list, list):
         primary_muscles_str = json.dumps(primary_muscles_list)  # Save as JSON string
@@ -1254,7 +1254,7 @@ def check_workout_progress(plan_id):
     try:
         start_date = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
     except ValueError:
-        # In case your DB stores it in a shorter format
+        # In case DB stores it in a shorter format
         start_date = datetime.strptime(created_at, '%Y-%m-%d')
 
     end_date = start_date + relativedelta(months=duration_months)
@@ -1306,7 +1306,7 @@ def handle_notification(notification_id):
     user_id = notification['user_id']
     notification_date_str = notification['date']
 
-    # 🗓️ Compare with today's date
+    # Compare with today's date
     today_str = datetime.today().strftime('%Y-%m-%d')
     if notification_date_str != today_str:
         conn.close()
@@ -1347,7 +1347,7 @@ def handle_notification(notification_id):
             VALUES (?, ?, ?, ?, ?)
         ''', (user_id, exercise_id, plan_id, date_str, status_to_mark))
 
-    # ✅ Mark the notification as checked
+    # Mark the notification as checked
     cursor.execute("UPDATE notifications SET checked = 1 WHERE notification_id = ?", (notification_id,))
     conn.commit()
     conn.close()
@@ -1607,7 +1607,6 @@ def delete_user(user_id):
                     print(f"Table {table} does not have a user_id column. Skipping.")
             except sqlite3.OperationalError as e:
                 print(f"Warning: Could not delete from {table}. Table might not exist or column missing: {e}")
-                # You might want to raise an error here if you expect all these tables to exist
 
         # Finally, delete from the User table
         cursor.execute("DELETE FROM User WHERE user_id = ?", (user_id,))
@@ -1998,7 +1997,7 @@ def update_meal_scan(meal_scan_id):
         current_image_path = current_scan['image_path']
 
         new_food_name = data.get('food_name')
-        new_timestamp = data.get('timestamp') # If you allow updating timestamp
+        new_timestamp = data.get('timestamp')
 
         fields_to_update = []
         values_to_update = []
@@ -2026,20 +2025,9 @@ def update_meal_scan(meal_scan_id):
             updated_calories = int(fetched_nutrition.get('calories', 0))
             updated_nutrients = fetched_nutrition
             
-        else: # If food_name is not changing, but maybe other fields could be updated
-            # If new_food_name is provided but is the same, no action needed for food_name/nutrition here
+        else: 
             if new_food_name is not None:
                 new_food_name = current_food_name # Revert to current if no change intended
-
-            # If you were allowing calories/nutrients to be passed directly for update without food_name change
-            # new_calories = data.get('calories')
-            # new_nutrients = data.get('nutrients')
-            # if new_calories is not None:
-            #     fields_to_update.append('calories = ?')
-            #     values_to_update.append(new_calories)
-            # if new_nutrients is not None:
-            #     fields_to_update.append('nutrients = ?')
-            #     values_to_update.append(json.dumps(new_nutrients))
 
         if new_timestamp is not None:
             fields_to_update.append('timestamp = ?')
@@ -2630,7 +2618,7 @@ def get_notifications(user_id):
         "type": row[3],
         "checked": row[4],
         "details": row[5],
-        "exercise_id": row[6],  # ✅ now included
+        "exercise_id": row[6],  # now included
         "date": row[7]
     } for row in rows]
 
@@ -2704,7 +2692,7 @@ def insert_daily_reminder_if_due(user_id, plan_id):
     cursor = conn.cursor()
     today = datetime.now().strftime('%Y-%m-%d')
 
-    # ✅ Get all uncompleted exercises scheduled for today in this plan
+    # Get all uncompleted exercises scheduled for today in this plan
     cursor.execute('''
         SELECT wpe.Exercise_ID
         FROM WorkoutPlanExercise wpe
@@ -2723,7 +2711,7 @@ def insert_daily_reminder_if_due(user_id, plan_id):
     for ex in pending_exercises:
         exercise_id = ex['Exercise_ID']
 
-        # ✅ Check if reminder for this exercise already exists
+        # Check if reminder for this exercise already exists
         cursor.execute("""
             SELECT 1 FROM notifications
             WHERE user_id = ? AND plan_id = ? AND date = ? AND exercise_id = ? AND type = 'daily reminder'
@@ -2819,21 +2807,21 @@ def respond_to_feedback():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # ✅ 1. Insert or Replace into FeedbackResponse
+    # 1. Insert or Replace into FeedbackResponse
     cursor.execute("""
         INSERT OR REPLACE INTO FeedbackResponse 
         (feedback_id, user_id, response_text, response_date)
         VALUES (?, ?, ?, datetime('now'))
     """, (feedback_id, user_id, response_text))
 
-    # ✅ 2. Update status of Feedback
+    # 2. Update status of Feedback
     cursor.execute("""
         UPDATE Feedback
         SET status = 'Responded'
         WHERE feedback_id = ?
     """, (feedback_id,))
 
-    # ✅ 3. Insert into Notifications table
+    # 3. Insert into Notifications table
     notification_details = f"Admin responded to your feedback (ID: {feedback_id}): {response_text}"
     cursor.execute("""
         INSERT INTO notifications (user_id, plan_id, type, details, checked, date)
@@ -3101,15 +3089,8 @@ if __name__ == '__main__':
     
     print("\nStarting NextGenFitness API...")
     print(f"Upload folder: {UPLOAD_FOLDER}")
+    print(f"Exercise images folder: {EXERCISE_FOLDER}")
     print(f"Max file size: {MAX_FILE_SIZE / (1024*1024)}MB")
-    print("\nAvailable meal scanner endpoints:")
-    print("  POST /api/scan-meal - Scan meal from image")
-    print("  GET  /api/meal-scans/<user_id> - Get user meal history")
-    print("  PUT  /api/meal-scan/<meal_scan_id> - Update meal scan")
-    print("  GET  /api/nutrition-info/<food_name> - Get nutrition info")
-    print("  GET  /api/search-food - Search food items")
-    print("  GET  /api/images/<filename> - Serve images")
-    print("\n--- Registered Routes ---")
-    for rule in app.url_map.iter_rules():
-        print(f"  {rule.rule} [{rule.methods}]")
+
+# Run the Flask app
 app.run(host='0.0.0.0', port=5000, debug=True)
